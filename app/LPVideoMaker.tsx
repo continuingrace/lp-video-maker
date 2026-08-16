@@ -344,18 +344,6 @@ function drawFrame(
     ctx.stroke();
   }
 
-  const rimPulse = .62 + shadowPulse * .38 * motion;
-  ctx.lineCap = "round";
-  ctx.lineWidth = Math.max(2, short * .0065);
-  ctx.strokeStyle = `rgba(255,255,248,${.22 + rimPulse * .32})`;
-  ctx.beginPath();
-  ctx.arc(0, 0, discRadius * .986, lightAngle - .72, lightAngle + .72);
-  ctx.stroke();
-  ctx.strokeStyle = `rgba(0,0,0,${.42 + shadowPulse * .34 * motion})`;
-  ctx.beginPath();
-  ctx.arc(0, 0, discRadius * .988, lightAngle + Math.PI - .78, lightAngle + Math.PI + .78);
-  ctx.stroke();
-
   ctx.rotate(angle);
   drawRotatingVinylTexture(ctx, discRadius, short, lightAngle);
   const labelRadius = discRadius * .43;
