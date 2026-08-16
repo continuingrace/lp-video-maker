@@ -58,6 +58,7 @@ button { color: inherit; }
 .step-title h2, .output-heading h2 { margin: 1px 0 3px; font-size: 17px; letter-spacing: -.035em; }
 .step-title p, .output-heading p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
 .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.upload-grid.three-files { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .upload-box { min-width: 0; min-height: 122px; padding: 15px; border: 1px dashed #bdb9ad; border-radius: 17px; display: flex; flex-direction: column; justify-content: center; align-items: flex-start; gap: 5px; cursor: pointer; transition: border-color .2s, background .2s, transform .2s; }
 .upload-box:active { transform: scale(.985); }
 .upload-box.selected { border-style: solid; border-color: #9da571; background: #f5f7e8; }
@@ -79,8 +80,8 @@ button { color: inherit; }
 .text-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
 .text-fields label > span, .accent-row > span { display: block; margin: 0 0 7px; font-size: 11px; font-weight: 750; color: #5f5d56; }
 .text-fields small { font-size: 9px; font-weight: 500; color: #98958b; }
-.text-fields input { width: 100%; height: 42px; border: 1px solid #d6d1c5; border-radius: 11px; padding: 0 12px; outline: none; background: #fffefa; font-size: 12px; }
-.text-fields input:focus { border-color: #6e6d63; box-shadow: 0 0 0 3px rgba(40,40,35,.08); }
+.text-fields textarea { width: 100%; min-height: 58px; resize: vertical; border: 1px solid #d6d1c5; border-radius: 11px; padding: 10px 12px; outline: none; background: #fffefa; font: inherit; font-size: 12px; line-height: 1.4; }
+.text-fields textarea:focus { border-color: #6e6d63; box-shadow: 0 0 0 3px rgba(40,40,35,.08); }
 .text-position-field { margin-top: 15px; }
 .editor-section { margin-top: 16px; padding: 15px; border: 1px solid #dfdbd0; border-radius: 16px; background: rgba(247,245,238,.76); }
 .editor-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 13px; }
@@ -96,6 +97,10 @@ button { color: inherit; }
 .extra-text-head button { border: 0; background: transparent; color: #9b5548; font-size: 9px; font-weight: 750; cursor: pointer; }
 .extra-text-input { width: 100%; height: 38px; border: 1px solid #d6d1c5; border-radius: 10px; padding: 0 11px; outline: none; background: #f8f6ef; font-size: 11px; }
 .extra-text-input:focus { border-color: #6e6d63; box-shadow: 0 0 0 3px rgba(40,40,35,.08); }
+.base-text-style-card { margin-top: 10px; padding: 12px; border: 1px solid #d9d5ca; border-radius: 13px; background: #fffefa; }
+.style-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #5f5d56; font-size: 10px; }
+.style-card-head .color-control span { font-size: 9px; }
+.style-sliders { margin-top: 10px; }
 .align-row.compact { margin-top: 10px; }
 .extra-text-sliders { margin-top: 11px; }
 .align-row, .grain-row { display: flex; align-items: center; gap: 12px; margin-top: 9px; }
@@ -171,6 +176,8 @@ footer p { margin: 0; text-align: right; }
   .align-row > span { width: auto; }
   .segmented.align-options { width: 100%; }
   .upload-box { min-height: 113px; padding: 13px; }
+  .upload-grid.three-files { grid-template-columns: 1fr 1fr; }
+  .upload-grid.three-files .upload-box:last-child { grid-column: 1 / -1; min-height: 96px; }
   .segmented.ratio-grid button { font-size: 10px; }
   footer { display: block; text-align: center; line-height: 1.55; }
   footer p { margin-top: 6px; text-align: center; }

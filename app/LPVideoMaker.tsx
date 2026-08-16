@@ -6,7 +6,7 @@ type RatioKey = "portrait" | "portrait45" | "square" | "landscape";
 type QualityKey = "fast" | "compact" | "full";
 type TextPositionKey = "below" | "bottom";
 type TextAlignKey = "left" | "center" | "right";
-type ExtraTextItem = { id: string; text: string; align: TextAlignKey; x: number; y: number; size: number };
+type ExtraTextItem = { id: string; text: string; align: TextAlignKey; x: number; y: number; size: number; opacity: number };
 
 const RATIOS: Record<RatioKey, { label: string; ratio: number }> = {
   portrait: { label: "스토리 9:16", ratio: 9 / 16 },
@@ -85,9 +85,37 @@ function drawFilmGrain(ctx: CanvasRenderingContext2D, w: number, h: number, amou
   ctx.restore();
 }
 
+function textLines(text: string) {
+  return text.replace(/\r/g, "").split("\n");
+}
+
+function drawTextLines(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  firstBaseline: number,
+  maxWidth: number,
+  fontSize: number,
+  lineHeight: number,
+  align: TextAlignKey,
+  color: string,
+  opacity: number,
+) {
+  ctx.save();
+  ctx.textAlign = align;
+  ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = color;
+  ctx.globalAlpha = Math.max(0, Math.min(100, opacity)) / 100;
+  textLines(text).forEach((line, index) => {
+    if (line) ctx.fillText(line, x, firstBaseline + index * fontSize * lineHeight, maxWidth);
+  });
+  ctx.restore();
+}
+
 function drawFrame(
   canvas: HTMLCanvasElement,
-  image: HTMLImageElement | null,
+  backgroundImage: HTMLImageElement | null,
+  labelImage: HTMLImageElement | null,
   angle: number,
   title: string,
   subtitle: string,
@@ -97,9 +125,20 @@ function drawFrame(
   subtitleAlign: TextAlignKey,
   textOffsetX: number,
   textOffsetY: number,
+  titleSize: number,
+  subtitleSize: number,
+  titleLineHeight: number,
+  subtitleLineHeight: number,
+  titleOpacity: number,
+  subtitleOpacity: number,
+  titleColor: string,
+  subtitleColor: string,
   imageZoom: number,
   imageOffsetX: number,
   imageOffsetY: number,
+  labelZoom: number,
+  labelOffsetX: number,
+  labelOffsetY: number,
   filterColor: string,
   filterOpacity: number,
   grainAmount: number,
@@ -112,9 +151,9 @@ function drawFrame(
   ctx.clearRect(0, 0, w, h);
 
   ctx.save();
-  if (image) {
+  if (backgroundImage) {
     ctx.filter = `blur(${Math.round(short * 0.045)}px) saturate(.72) brightness(.43)`;
-    coverImage(ctx, image, -short * 0.08, -short * 0.08, w + short * 0.16, h + short * 0.16, imageZoom, imageOffsetX, imageOffsetY);
+    coverImage(ctx, backgroundImage, -short * 0.08, -short * 0.08, w + short * 0.16, h + short * 0.16, imageZoom, imageOffsetX, imageOffsetY);
     ctx.filter = "none";
   } else {
     ctx.fillStyle = "#282823";
@@ -174,7 +213,8 @@ function drawFrame(
   ctx.beginPath();
   ctx.arc(0, 0, labelRadius, 0, Math.PI * 2);
   ctx.clip();
-  if (image) coverImage(ctx, image, -labelRadius, -labelRadius, labelRadius * 2, labelRadius * 2, imageZoom, imageOffsetX, imageOffsetY);
+  const centerImage = labelImage ?? backgroundImage;
+  if (centerImage) coverImage(ctx, centerImage, -labelRadius, -labelRadius, labelRadius * 2, labelRadius * 2, labelZoom, labelOffsetX, labelOffsetY);
   else {
     ctx.fillStyle = accent;
     ctx.fillRect(-labelRadius, -labelRadius, labelRadius * 2, labelRadius * 2);
@@ -194,29 +234,33 @@ function drawFrame(
   ctx.restore();
 
   if (title || subtitle) {
-    const titleY = textPosition === "below"
-      ? Math.min(h - short * .17, discY + discRadius + short * .09)
-      : h - short * (subtitle ? .176 : .12);
-    const subtitleY = textPosition === "below"
-      ? titleY + short * .052
-      : h - short * .12;
+    const titleFontSize = short * (titleSize / 100);
+    const subtitleFontSize = short * (subtitleSize / 100);
+    const titleRows = title ? textLines(title).length : 0;
+    const subtitleRows = subtitle ? textLines(subtitle).length : 0;
+    const titleHeight = titleRows ? titleFontSize + Math.max(0, titleRows - 1) * titleFontSize * titleLineHeight : 0;
+    const subtitleHeight = subtitleRows ? subtitleFontSize + Math.max(0, subtitleRows - 1) * subtitleFontSize * subtitleLineHeight : 0;
+    const textGap = title && subtitle ? short * .022 : 0;
+    const blockHeight = titleHeight + textGap + subtitleHeight;
+    const naturalTop = textPosition === "below"
+      ? discY + discRadius + short * .058
+      : h - short * .08 - blockHeight;
+    const blockTop = Math.min(h - short * .06 - blockHeight, naturalTop);
     const rawShiftY = (textOffsetY / 100) * h * .18;
-    const blockTop = title ? titleY : subtitleY;
-    const blockBottom = subtitle ? subtitleY : titleY;
-    const shiftY = Math.max(short * .06 - blockTop, Math.min(h - short * .06 - blockBottom, rawShiftY));
+    const shiftY = Math.max(short * .06 - blockTop, Math.min(h - short * .06 - (blockTop + blockHeight), rawShiftY));
     const anchorX = (align: TextAlignKey) => {
       const base = align === "left" ? short * .09 : align === "right" ? w - short * .09 : w / 2;
       return Math.max(short * .04, Math.min(w - short * .04, base + (textOffsetX / 100) * w * .22));
     };
-    ctx.textAlign = titleAlign;
-    ctx.fillStyle = "#fffdf5";
-    ctx.font = `700 ${Math.round(short * .052)}px -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif`;
-    if (title) ctx.fillText(title, anchorX(titleAlign), titleY + shiftY, w - short * .18);
+    let nextTop = blockTop + shiftY;
+    ctx.font = `700 ${Math.round(titleFontSize)}px -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif`;
+    if (title) {
+      drawTextLines(ctx, title, anchorX(titleAlign), nextTop + titleFontSize, w - short * .18, titleFontSize, titleLineHeight, titleAlign, titleColor, titleOpacity);
+      nextTop += titleHeight + textGap;
+    }
     if (subtitle) {
-      ctx.textAlign = subtitleAlign;
-      ctx.fillStyle = "rgba(255,253,245,.72)";
-      ctx.font = `500 ${Math.round(short * .025)}px -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif`;
-      ctx.fillText(subtitle, anchorX(subtitleAlign), (title ? subtitleY : titleY) + shiftY, w - short * .18);
+      ctx.font = `500 ${Math.round(subtitleFontSize)}px -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif`;
+      drawTextLines(ctx, subtitle, anchorX(subtitleAlign), nextTop + subtitleFontSize, w - short * .18, subtitleFontSize, subtitleLineHeight, subtitleAlign, subtitleColor, subtitleOpacity);
     }
   }
   if (extraTexts.length) {
@@ -226,10 +270,13 @@ function drawFrame(
     ctx.shadowBlur = short * .012;
     extraTexts.forEach((item) => {
       if (!item.text.trim()) return;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, Math.min(100, item.opacity)) / 100;
       ctx.textAlign = item.align;
       ctx.textBaseline = "middle";
       ctx.font = `600 ${Math.round(short * (item.size / 100))}px -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif`;
       ctx.fillText(item.text, w * (item.x / 100), h * (item.y / 100), w - short * .16);
+      ctx.restore();
     });
     ctx.restore();
   }
@@ -240,6 +287,7 @@ export default function LPVideoMaker() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
+  const labelImageRef = useRef<HTMLImageElement | null>(null);
   const animationRef = useRef<number | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const monitorGainRef = useRef<GainNode | null>(null);
@@ -251,6 +299,7 @@ export default function LPVideoMaker() {
 
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
+  const [labelImageFile, setLabelImageFile] = useState<File | null>(null);
   const [duration, setDuration] = useState(0);
   const [ratio, setRatio] = useState<RatioKey>("portrait");
   const [quality, setQuality] = useState<QualityKey>("compact");
@@ -261,9 +310,20 @@ export default function LPVideoMaker() {
   const [subtitleAlign, setSubtitleAlign] = useState<TextAlignKey>("center");
   const [textOffsetX, setTextOffsetX] = useState(0);
   const [textOffsetY, setTextOffsetY] = useState(0);
+  const [titleSize, setTitleSize] = useState(5.2);
+  const [subtitleSize, setSubtitleSize] = useState(2.5);
+  const [titleLineHeight, setTitleLineHeight] = useState(1.15);
+  const [subtitleLineHeight, setSubtitleLineHeight] = useState(1.35);
+  const [titleOpacity, setTitleOpacity] = useState(100);
+  const [subtitleOpacity, setSubtitleOpacity] = useState(72);
+  const [titleColor, setTitleColor] = useState("#fffdf5");
+  const [subtitleColor, setSubtitleColor] = useState("#fffdf5");
   const [imageZoom, setImageZoom] = useState(100);
   const [imageOffsetX, setImageOffsetX] = useState(0);
   const [imageOffsetY, setImageOffsetY] = useState(0);
+  const [labelZoom, setLabelZoom] = useState(100);
+  const [labelOffsetX, setLabelOffsetX] = useState(0);
+  const [labelOffsetY, setLabelOffsetY] = useState(0);
   const [filterColor, setFilterColor] = useState("#111827");
   const [filterOpacity, setFilterOpacity] = useState(0);
   const [grainEnabled, setGrainEnabled] = useState(false);
@@ -293,6 +353,7 @@ export default function LPVideoMaker() {
     drawFrame(
       canvasRef.current,
       imageRef.current,
+      labelImageRef.current,
       angle,
       title,
       subtitle,
@@ -302,15 +363,26 @@ export default function LPVideoMaker() {
       subtitleAlign,
       textOffsetX,
       textOffsetY,
+      titleSize,
+      subtitleSize,
+      titleLineHeight,
+      subtitleLineHeight,
+      titleOpacity,
+      subtitleOpacity,
+      titleColor,
+      subtitleColor,
       imageZoom / 100,
       imageOffsetX,
       imageOffsetY,
+      labelZoom / 100,
+      labelOffsetX,
+      labelOffsetY,
       filterColor,
       filterOpacity,
       grainEnabled ? grainAmount : 0,
       extraTexts,
     );
-  }, [title, subtitle, accent, textPosition, titleAlign, subtitleAlign, textOffsetX, textOffsetY, imageZoom, imageOffsetX, imageOffsetY, filterColor, filterOpacity, grainEnabled, grainAmount, extraTexts]);
+  }, [title, subtitle, accent, textPosition, titleAlign, subtitleAlign, textOffsetX, textOffsetY, titleSize, subtitleSize, titleLineHeight, subtitleLineHeight, titleOpacity, subtitleOpacity, titleColor, subtitleColor, imageZoom, imageOffsetX, imageOffsetY, labelZoom, labelOffsetX, labelOffsetY, filterColor, filterOpacity, grainEnabled, grainAmount, extraTexts]);
 
   function addExtraText() {
     if (extraTexts.length >= 6) return;
@@ -322,6 +394,7 @@ export default function LPVideoMaker() {
       x: 50,
       y: Math.min(90, 68 + index * 7),
       size: 3.2,
+      opacity: 100,
     }]);
   }
 
@@ -426,6 +499,24 @@ export default function LPVideoMaker() {
     };
     image.onerror = () => {
       setMessage("이 이미지를 읽지 못했어요. JPG, PNG 파일을 사용해 주세요.");
+      URL.revokeObjectURL(url);
+    };
+    image.src = url;
+  }
+
+  function onLabelImage(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const image = new Image();
+    const url = URL.createObjectURL(file);
+    image.onload = () => {
+      labelImageRef.current = image;
+      setLabelImageFile(file);
+      paintStill();
+      URL.revokeObjectURL(url);
+    };
+    image.onerror = () => {
+      setMessage("LP 가운데 이미지를 읽지 못했어요. JPG, PNG 파일을 사용해 주세요.");
       URL.revokeObjectURL(url);
     };
     image.src = url;
@@ -625,8 +716,8 @@ export default function LPVideoMaker() {
 
         <div className="controls-column">
           <section className="control-card">
-            <div className="step-title"><span>1</span><div><h2>파일 고르기</h2><p>녹음과 썸네일 사진 한 장이면 돼요.</p></div></div>
-            <div className="upload-grid">
+            <div className="step-title"><span>1</span><div><h2>파일 고르기</h2><p>녹음과 배경 사진을 고르고, LP 가운데 사진은 선택할 수 있어요.</p></div></div>
+            <div className="upload-grid three-files">
               <label className={`upload-box ${audioFile ? "selected" : ""}`}>
                 <input type="file" accept="audio/*,.m4a,.mp3,.wav,.aac" onChange={onAudio} />
                 <span className="upload-icon">♪</span>
@@ -636,8 +727,14 @@ export default function LPVideoMaker() {
               <label className={`upload-box ${imageFile ? "selected" : ""}`}>
                 <input type="file" accept="image/*,.heic,.heif" onChange={onImage} />
                 <span className="upload-icon">▣</span>
-                <b>{imageFile ? imageFile.name : "썸네일 이미지"}</b>
+                <b>{imageFile ? imageFile.name : "배경 이미지"}</b>
                 <small>{imageFile ? formatBytes(imageFile.size) : "jpg, png, heic"}</small>
+              </label>
+              <label className={`upload-box ${labelImageFile ? "selected" : ""}`}>
+                <input type="file" accept="image/*,.heic,.heif" onChange={onLabelImage} />
+                <span className="upload-icon">●</span>
+                <b>{labelImageFile ? labelImageFile.name : "LP 가운데 이미지"}</b>
+                <small>{labelImageFile ? formatBytes(labelImageFile.size) : "선택 · 없으면 배경 사용"}</small>
               </label>
             </div>
           </section>
@@ -651,8 +748,8 @@ export default function LPVideoMaker() {
               ))}
             </div>
             <div className="text-fields">
-              <label><span>제목 <small>선택</small></span><input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={34} placeholder="예: 시편 23편" /></label>
-              <label><span>작은 설명 <small>선택</small></span><input value={subtitle} onChange={(e) => setSubtitle(e.target.value)} maxLength={50} placeholder="예: 임마누엘성가대 리허설" /></label>
+              <label><span>제목 <small>선택 · 줄바꿈 가능</small></span><textarea rows={2} value={title} onChange={(e) => setTitle(e.target.value)} maxLength={68} placeholder="예: 시편 23편" /></label>
+              <label><span>작은 설명 <small>선택 · 줄바꿈 가능</small></span><textarea rows={2} value={subtitle} onChange={(e) => setSubtitle(e.target.value)} maxLength={100} placeholder="예: 임마누엘성가대 리허설" /></label>
             </div>
             <div className="text-position-field">
               <div className="field-label"><span>텍스트 위치</span></div>
@@ -662,12 +759,12 @@ export default function LPVideoMaker() {
               </div>
             </div>
             <div className="editor-section">
-              <div className="editor-heading"><div><h3>텍스트 정렬·위치</h3><p>제목과 설명은 따로 정렬할 수 있어요.</p></div><button className="reset-button" onClick={() => { setTitleAlign("center"); setSubtitleAlign("center"); setTextOffsetX(0); setTextOffsetY(0); }}>초기화</button></div>
+              <div className="editor-heading"><div><h3>텍스트 정렬·위치</h3><p>정렬을 누르면 기준 위치도 정확히 초기화돼요.</p></div><button className="reset-button" onClick={() => { setTitleAlign("center"); setSubtitleAlign("center"); setTextOffsetX(0); setTextOffsetY(0); }}>초기화</button></div>
               <div className="align-row">
                 <span>제목 정렬</span>
                 <div className="segmented align-options">
                   {([['left', '왼쪽'], ['center', '가운데'], ['right', '오른쪽']] as const).map(([key, label]) => (
-                    <button key={key} className={titleAlign === key ? "active" : ""} onClick={() => setTitleAlign(key)}>{label}</button>
+                    <button key={key} className={titleAlign === key ? "active" : ""} onClick={() => { setTitleAlign(key); setTextOffsetX(0); }}>{label}</button>
                   ))}
                 </div>
               </div>
@@ -675,13 +772,32 @@ export default function LPVideoMaker() {
                 <span>설명 정렬</span>
                 <div className="segmented align-options">
                   {([['left', '왼쪽'], ['center', '가운데'], ['right', '오른쪽']] as const).map(([key, label]) => (
-                    <button key={key} className={subtitleAlign === key ? "active" : ""} onClick={() => setSubtitleAlign(key)}>{label}</button>
+                    <button key={key} className={subtitleAlign === key ? "active" : ""} onClick={() => { setSubtitleAlign(key); setTextOffsetX(0); }}>{label}</button>
                   ))}
                 </div>
               </div>
               <div className="slider-grid">
                 <label className="range-control"><span><b>가로 위치</b><small>{textOffsetX > 0 ? `+${textOffsetX}` : textOffsetX}</small></span><input aria-label="텍스트 가로 위치" type="range" min="-100" max="100" value={textOffsetX} onChange={(e) => setTextOffsetX(Number(e.target.value))} /></label>
                 <label className="range-control"><span><b>세로 위치</b><small>{textOffsetY > 0 ? `+${textOffsetY}` : textOffsetY}</small></span><input aria-label="텍스트 세로 위치" type="range" min="-100" max="100" value={textOffsetY} onChange={(e) => setTextOffsetY(Number(e.target.value))} /></label>
+              </div>
+            </div>
+            <div className="editor-section">
+              <div className="editor-heading"><div><h3>기본 텍스트 스타일</h3><p>제목과 설명을 각각 조절할 수 있어요.</p></div><button className="reset-button" onClick={() => { setTitleSize(5.2); setSubtitleSize(2.5); setTitleLineHeight(1.15); setSubtitleLineHeight(1.35); setTitleOpacity(100); setSubtitleOpacity(72); setTitleColor("#fffdf5"); setSubtitleColor("#fffdf5"); }}>초기화</button></div>
+              <div className="base-text-style-card">
+                <div className="style-card-head"><b>제목</b><label className="color-control"><span>색상</span><input aria-label="제목 색상" type="color" value={titleColor} onChange={(e) => setTitleColor(e.target.value)} /></label></div>
+                <div className="slider-grid style-sliders">
+                  <label className="range-control"><span><b>글자 크기</b><small>{titleSize.toFixed(1)}%</small></span><input aria-label="제목 글자 크기" type="range" min="2.5" max="10" step="0.1" value={titleSize} onChange={(e) => setTitleSize(Number(e.target.value))} /></label>
+                  <label className="range-control"><span><b>행간</b><small>{titleLineHeight.toFixed(2)}</small></span><input aria-label="제목 행간" type="range" min="0.9" max="2" step="0.05" value={titleLineHeight} onChange={(e) => setTitleLineHeight(Number(e.target.value))} /></label>
+                  <label className="range-control full"><span><b>투명도</b><small>{titleOpacity}%</small></span><input aria-label="제목 투명도" type="range" min="0" max="100" value={titleOpacity} onChange={(e) => setTitleOpacity(Number(e.target.value))} /></label>
+                </div>
+              </div>
+              <div className="base-text-style-card">
+                <div className="style-card-head"><b>설명</b><label className="color-control"><span>색상</span><input aria-label="설명 색상" type="color" value={subtitleColor} onChange={(e) => setSubtitleColor(e.target.value)} /></label></div>
+                <div className="slider-grid style-sliders">
+                  <label className="range-control"><span><b>글자 크기</b><small>{subtitleSize.toFixed(1)}%</small></span><input aria-label="설명 글자 크기" type="range" min="1.3" max="7" step="0.1" value={subtitleSize} onChange={(e) => setSubtitleSize(Number(e.target.value))} /></label>
+                  <label className="range-control"><span><b>행간</b><small>{subtitleLineHeight.toFixed(2)}</small></span><input aria-label="설명 행간" type="range" min="0.9" max="2" step="0.05" value={subtitleLineHeight} onChange={(e) => setSubtitleLineHeight(Number(e.target.value))} /></label>
+                  <label className="range-control full"><span><b>투명도</b><small>{subtitleOpacity}%</small></span><input aria-label="설명 투명도" type="range" min="0" max="100" value={subtitleOpacity} onChange={(e) => setSubtitleOpacity(Number(e.target.value))} /></label>
+                </div>
               </div>
             </div>
             <div className="editor-section">
@@ -704,17 +820,26 @@ export default function LPVideoMaker() {
                       <label className="range-control full"><span><b>글자 크기</b><small>{item.size.toFixed(1)}%</small></span><input aria-label={`추가 텍스트 ${index + 1} 글자 크기`} type="range" min="1.8" max="8" step="0.2" value={item.size} onChange={(e) => updateExtraText(item.id, { size: Number(e.target.value) })} /></label>
                       <label className="range-control"><span><b>가로 위치</b><small>{item.x}%</small></span><input aria-label={`추가 텍스트 ${index + 1} 가로 위치`} type="range" min="4" max="96" value={item.x} onChange={(e) => updateExtraText(item.id, { x: Number(e.target.value) })} /></label>
                       <label className="range-control"><span><b>세로 위치</b><small>{item.y}%</small></span><input aria-label={`추가 텍스트 ${index + 1} 세로 위치`} type="range" min="4" max="96" value={item.y} onChange={(e) => updateExtraText(item.id, { y: Number(e.target.value) })} /></label>
+                      <label className="range-control full"><span><b>투명도</b><small>{item.opacity}%</small></span><input aria-label={`추가 텍스트 ${index + 1} 투명도`} type="range" min="0" max="100" value={item.opacity} onChange={(e) => updateExtraText(item.id, { opacity: Number(e.target.value) })} /></label>
                     </div>
                   </div>
                 ))}
               </div>
             </div>
             <div className="editor-section">
-              <div className="editor-heading"><div><h3>사진 위치·확대</h3><p>배경과 LP 중앙 사진에 함께 적용돼요.</p></div><button className="reset-button" onClick={() => { setImageZoom(100); setImageOffsetX(0); setImageOffsetY(0); }}>초기화</button></div>
+              <div className="editor-heading"><div><h3>배경 사진 위치·확대</h3><p>화면을 채우는 배경 사진에 적용돼요.</p></div><button className="reset-button" onClick={() => { setImageZoom(100); setImageOffsetX(0); setImageOffsetY(0); }}>초기화</button></div>
               <div className="slider-grid">
                 <label className="range-control full"><span><b>확대</b><small>{imageZoom}%</small></span><input aria-label="사진 확대" type="range" min="100" max="240" value={imageZoom} onChange={(e) => setImageZoom(Number(e.target.value))} /></label>
                 <label className="range-control"><span><b>가로 이동</b><small>{imageOffsetX > 0 ? `+${imageOffsetX}` : imageOffsetX}</small></span><input aria-label="사진 가로 이동" type="range" min="-100" max="100" value={imageOffsetX} onChange={(e) => setImageOffsetX(Number(e.target.value))} /></label>
                 <label className="range-control"><span><b>세로 이동</b><small>{imageOffsetY > 0 ? `+${imageOffsetY}` : imageOffsetY}</small></span><input aria-label="사진 세로 이동" type="range" min="-100" max="100" value={imageOffsetY} onChange={(e) => setImageOffsetY(Number(e.target.value))} /></label>
+              </div>
+            </div>
+            <div className="editor-section">
+              <div className="editor-heading"><div><h3>LP 가운데 사진 위치·확대</h3><p>LP 라벨 안의 둥근 사진에만 적용돼요.</p></div><button className="reset-button" onClick={() => { setLabelZoom(100); setLabelOffsetX(0); setLabelOffsetY(0); }}>초기화</button></div>
+              <div className="slider-grid">
+                <label className="range-control full"><span><b>확대</b><small>{labelZoom}%</small></span><input aria-label="LP 가운데 사진 확대" type="range" min="100" max="240" value={labelZoom} onChange={(e) => setLabelZoom(Number(e.target.value))} /></label>
+                <label className="range-control"><span><b>가로 이동</b><small>{labelOffsetX > 0 ? `+${labelOffsetX}` : labelOffsetX}</small></span><input aria-label="LP 가운데 사진 가로 이동" type="range" min="-100" max="100" value={labelOffsetX} onChange={(e) => setLabelOffsetX(Number(e.target.value))} /></label>
+                <label className="range-control"><span><b>세로 이동</b><small>{labelOffsetY > 0 ? `+${labelOffsetY}` : labelOffsetY}</small></span><input aria-label="LP 가운데 사진 세로 이동" type="range" min="-100" max="100" value={labelOffsetY} onChange={(e) => setLabelOffsetY(Number(e.target.value))} /></label>
               </div>
             </div>
             <div className="editor-section">
