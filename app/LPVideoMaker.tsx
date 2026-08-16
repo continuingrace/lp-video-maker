@@ -85,7 +85,7 @@ function drawFilmGrain(ctx: CanvasRenderingContext2D, w: number, h: number, amou
   ctx.restore();
 }
 
-function drawRotatingVinylTexture(ctx: CanvasRenderingContext2D, radius: number, short: number) {
+function drawRotatingVinylTexture(ctx: CanvasRenderingContext2D, radius: number, short: number, lightAngle: number) {
   ctx.save();
   ctx.beginPath();
   ctx.arc(0, 0, radius * .982, 0, Math.PI * 2);
@@ -94,11 +94,11 @@ function drawRotatingVinylTexture(ctx: CanvasRenderingContext2D, radius: number,
   ctx.lineCap = "round";
 
   const glints = [
-    { radius: .56, start: -.98, length: .54, alpha: .16 },
-    { radius: .64, start: -.92, length: .43, alpha: .12 },
-    { radius: .73, start: -.86, length: .64, alpha: .14 },
-    { radius: .82, start: -.78, length: .47, alpha: .11 },
-    { radius: .9, start: -.7, length: .58, alpha: .14 },
+    { radius: .56, start: lightAngle - .3, length: .54, alpha: .22 },
+    { radius: .64, start: lightAngle - .24, length: .43, alpha: .17 },
+    { radius: .73, start: lightAngle - .18, length: .64, alpha: .2 },
+    { radius: .82, start: lightAngle - .1, length: .47, alpha: .16 },
+    { radius: .9, start: lightAngle, length: .58, alpha: .21 },
   ];
   glints.forEach((glint) => {
     ctx.strokeStyle = `rgba(255,255,248,${glint.alpha})`;
@@ -110,10 +110,12 @@ function drawRotatingVinylTexture(ctx: CanvasRenderingContext2D, radius: number,
 
   ctx.fillStyle = "rgba(255,255,248,.055)";
   ctx.beginPath();
-  ctx.moveTo(Math.cos(.18) * radius * .47, Math.sin(.18) * radius * .47);
-  ctx.arc(0, 0, radius * .95, .1, .31);
-  ctx.lineTo(Math.cos(.38) * radius * .47, Math.sin(.38) * radius * .47);
-  ctx.arc(0, 0, radius * .47, .38, .18, true);
+  const bandStart = lightAngle + .65;
+  const bandEnd = bandStart + .22;
+  ctx.moveTo(Math.cos(bandStart) * radius * .47, Math.sin(bandStart) * radius * .47);
+  ctx.arc(0, 0, radius * .95, bandStart, bandEnd);
+  ctx.lineTo(Math.cos(bandEnd + .08) * radius * .47, Math.sin(bandEnd + .08) * radius * .47);
+  ctx.arc(0, 0, radius * .47, bandEnd + .08, bandStart, true);
   ctx.closePath();
   ctx.fill();
 
@@ -130,6 +132,17 @@ function drawRotatingVinylTexture(ctx: CanvasRenderingContext2D, radius: number,
     ctx.fill();
   });
   ctx.restore();
+}
+
+function lightDirectionLabel(degrees: number) {
+  if (degrees >= -22 && degrees < 22) return "오른쪽";
+  if (degrees >= 22 && degrees < 68) return "오른쪽 아래";
+  if (degrees >= 68 && degrees < 112) return "아래";
+  if (degrees >= 112 && degrees < 158) return "왼쪽 아래";
+  if (degrees >= 158 || degrees < -158) return "왼쪽";
+  if (degrees >= -158 && degrees < -112) return "왼쪽 위";
+  if (degrees >= -112 && degrees < -68) return "위";
+  return "오른쪽 위";
 }
 
 function textLines(text: string) {
@@ -200,6 +213,8 @@ function drawFrame(
   labelZoom: number,
   labelOffsetX: number,
   labelOffsetY: number,
+  lightDirection: number,
+  rimMotion: number,
   filterColor: string,
   filterOpacity: number,
   grainAmount: number,
@@ -238,17 +253,26 @@ function drawFrame(
   const discRadius = short * (w < h ? 0.39 : 0.31);
   const discX = w / 2;
   const discY = h * (w < h ? 0.43 : 0.47);
+  const lightAngle = lightDirection * Math.PI / 180;
+  const motion = Math.max(0, Math.min(100, rimMotion)) / 100;
+  const shadowPulse = .5 + .5 * Math.sin(angle * 1.35 + lightAngle);
+  const shadowDistance = short * (.018 + motion * (.008 + shadowPulse * .012));
+  const shadowAngle = lightAngle + Math.PI + Math.sin(angle * .72) * .16 * motion;
 
   ctx.save();
   ctx.translate(discX, discY);
-  ctx.shadowColor = "rgba(0,0,0,.55)";
-  ctx.shadowBlur = short * 0.055;
-  ctx.shadowOffsetY = short * 0.025;
+  ctx.shadowColor = `rgba(0,0,0,${.48 + shadowPulse * .24 * motion})`;
+  ctx.shadowBlur = short * (.038 + motion * (.014 + shadowPulse * .018));
+  ctx.shadowOffsetX = Math.cos(shadowAngle) * shadowDistance;
+  ctx.shadowOffsetY = Math.sin(shadowAngle) * shadowDistance;
   ctx.beginPath();
   ctx.arc(0, 0, discRadius, 0, Math.PI * 2);
   ctx.fillStyle = "#0b0b0b";
   ctx.fill();
   ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
 
   const sheen = ctx.createRadialGradient(-discRadius * .28, -discRadius * .32, 0, 0, 0, discRadius);
   sheen.addColorStop(0, "rgba(255,255,255,.16)");
@@ -268,8 +292,20 @@ function drawFrame(
     ctx.stroke();
   }
 
+  const rimPulse = .62 + shadowPulse * .38 * motion;
+  ctx.lineCap = "round";
+  ctx.lineWidth = Math.max(2, short * .0065);
+  ctx.strokeStyle = `rgba(255,255,248,${.22 + rimPulse * .32})`;
+  ctx.beginPath();
+  ctx.arc(0, 0, discRadius * .986, lightAngle - .72, lightAngle + .72);
+  ctx.stroke();
+  ctx.strokeStyle = `rgba(0,0,0,${.42 + shadowPulse * .34 * motion})`;
+  ctx.beginPath();
+  ctx.arc(0, 0, discRadius * .988, lightAngle + Math.PI - .78, lightAngle + Math.PI + .78);
+  ctx.stroke();
+
   ctx.rotate(angle);
-  drawRotatingVinylTexture(ctx, discRadius, short);
+  drawRotatingVinylTexture(ctx, discRadius, short, lightAngle);
   const labelRadius = discRadius * .43;
   ctx.save();
   ctx.beginPath();
@@ -390,6 +426,8 @@ export default function LPVideoMaker() {
   const [labelZoom, setLabelZoom] = useState(100);
   const [labelOffsetX, setLabelOffsetX] = useState(0);
   const [labelOffsetY, setLabelOffsetY] = useState(0);
+  const [lightDirection, setLightDirection] = useState(-45);
+  const [rimMotion, setRimMotion] = useState(72);
   const [filterColor, setFilterColor] = useState("#111827");
   const [filterOpacity, setFilterOpacity] = useState(0);
   const [grainEnabled, setGrainEnabled] = useState(false);
@@ -442,12 +480,14 @@ export default function LPVideoMaker() {
       labelZoom / 100,
       labelOffsetX,
       labelOffsetY,
+      lightDirection,
+      rimMotion,
       filterColor,
       filterOpacity,
       grainEnabled ? grainAmount : 0,
       extraTexts,
     );
-  }, [title, subtitle, accent, textPosition, titleAlign, subtitleAlign, textOffsetX, textOffsetY, titleSize, subtitleSize, textGapSize, titleOpacity, subtitleOpacity, titleColor, subtitleColor, imageZoom, imageOffsetX, imageOffsetY, labelZoom, labelOffsetX, labelOffsetY, filterColor, filterOpacity, grainEnabled, grainAmount, extraTexts]);
+  }, [title, subtitle, accent, textPosition, titleAlign, subtitleAlign, textOffsetX, textOffsetY, titleSize, subtitleSize, textGapSize, titleOpacity, subtitleOpacity, titleColor, subtitleColor, imageZoom, imageOffsetX, imageOffsetY, labelZoom, labelOffsetX, labelOffsetY, lightDirection, rimMotion, filterColor, filterOpacity, grainEnabled, grainAmount, extraTexts]);
 
   useEffect(() => {
     paintStillRef.current = paintStill;
@@ -929,6 +969,13 @@ export default function LPVideoMaker() {
                 <label className="range-control full"><span><b>확대</b><small>{labelZoom}%</small></span><input aria-label="LP 가운데 사진 확대" type="range" min="100" max="240" value={labelZoom} onChange={(e) => setLabelZoom(Number(e.target.value))} /></label>
                 <label className="range-control"><span><b>가로 이동</b><small>{labelOffsetX > 0 ? `+${labelOffsetX}` : labelOffsetX}</small></span><input aria-label="LP 가운데 사진 가로 이동" type="range" min="-100" max="100" value={labelOffsetX} onChange={(e) => setLabelOffsetX(Number(e.target.value))} /></label>
                 <label className="range-control"><span><b>세로 이동</b><small>{labelOffsetY > 0 ? `+${labelOffsetY}` : labelOffsetY}</small></span><input aria-label="LP 가운데 사진 세로 이동" type="range" min="-100" max="100" value={labelOffsetY} onChange={(e) => setLabelOffsetY(Number(e.target.value))} /></label>
+              </div>
+            </div>
+            <div className="editor-section">
+              <div className="editor-heading"><div><h3>LP 회전 조명</h3><p>빛 방향과 외곽 그림자 변화를 보면서 조절해요.</p></div><button className="reset-button" onClick={() => { setLightDirection(-45); setRimMotion(72); }}>초기화</button></div>
+              <div className="slider-grid">
+                <label className="range-control full"><span><b>빛 방향</b><small>{lightDirectionLabel(lightDirection)} · {lightDirection}°</small></span><input aria-label="LP 빛 방향" type="range" min="-180" max="180" step="5" value={lightDirection} onInput={(e) => setLightDirection(Number(e.currentTarget.value))} onChange={(e) => setLightDirection(Number(e.target.value))} /></label>
+                <label className="range-control full"><span><b>외곽 그림자 변화</b><small>{rimMotion}%</small></span><input aria-label="LP 외곽 그림자 변화" type="range" min="0" max="100" value={rimMotion} onInput={(e) => setRimMotion(Number(e.currentTarget.value))} onChange={(e) => setRimMotion(Number(e.target.value))} /></label>
               </div>
             </div>
             <div className="editor-section">
