@@ -6,6 +6,7 @@ type RatioKey = "portrait" | "portrait45" | "square" | "landscape";
 type QualityKey = "compact" | "full";
 type TextPositionKey = "below" | "bottom";
 type TextAlignKey = "left" | "center" | "right";
+type ExtraTextItem = { id: string; text: string; align: TextAlignKey; x: number; y: number; size: number };
 
 const RATIOS: Record<RatioKey, { label: string; ratio: number }> = {
   portrait: { label: "스토리 9:16", ratio: 9 / 16 },
@@ -101,6 +102,7 @@ function drawFrame(
   filterColor: string,
   filterOpacity: number,
   grainAmount: number,
+  extraTexts: ExtraTextItem[],
 ) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -216,6 +218,20 @@ function drawFrame(
       ctx.fillText(subtitle, anchorX(subtitleAlign), (title ? subtitleY : titleY) + shiftY, w - short * .18);
     }
   }
+  if (extraTexts.length) {
+    ctx.save();
+    ctx.fillStyle = "#fffdf5";
+    ctx.shadowColor = "rgba(0,0,0,.5)";
+    ctx.shadowBlur = short * .012;
+    extraTexts.forEach((item) => {
+      if (!item.text.trim()) return;
+      ctx.textAlign = item.align;
+      ctx.textBaseline = "middle";
+      ctx.font = `600 ${Math.round(short * (item.size / 100))}px -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif`;
+      ctx.fillText(item.text, w * (item.x / 100), h * (item.y / 100), w - short * .16);
+    });
+    ctx.restore();
+  }
   ctx.restore();
 }
 
@@ -251,6 +267,7 @@ export default function LPVideoMaker() {
   const [filterOpacity, setFilterOpacity] = useState(0);
   const [grainEnabled, setGrainEnabled] = useState(false);
   const [grainAmount, setGrainAmount] = useState(24);
+  const [extraTexts, setExtraTexts] = useState<ExtraTextItem[]>([]);
   const [accent, setAccent] = useState("#e2ff62");
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
@@ -288,8 +305,26 @@ export default function LPVideoMaker() {
       filterColor,
       filterOpacity,
       grainEnabled ? grainAmount : 0,
+      extraTexts,
     );
-  }, [title, subtitle, accent, textPosition, titleAlign, subtitleAlign, textOffsetX, textOffsetY, imageZoom, imageOffsetX, imageOffsetY, filterColor, filterOpacity, grainEnabled, grainAmount]);
+  }, [title, subtitle, accent, textPosition, titleAlign, subtitleAlign, textOffsetX, textOffsetY, imageZoom, imageOffsetX, imageOffsetY, filterColor, filterOpacity, grainEnabled, grainAmount, extraTexts]);
+
+  function addExtraText() {
+    if (extraTexts.length >= 6) return;
+    const index = extraTexts.length;
+    setExtraTexts((items) => [...items, {
+      id: `${Date.now()}-${index}`,
+      text: "추가 텍스트",
+      align: "center",
+      x: 50,
+      y: Math.min(90, 68 + index * 7),
+      size: 3.2,
+    }]);
+  }
+
+  function updateExtraText(id: string, patch: Partial<ExtraTextItem>) {
+    setExtraTexts((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item));
+  }
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -639,6 +674,31 @@ export default function LPVideoMaker() {
               <div className="slider-grid">
                 <label className="range-control"><span><b>가로 위치</b><small>{textOffsetX > 0 ? `+${textOffsetX}` : textOffsetX}</small></span><input aria-label="텍스트 가로 위치" type="range" min="-100" max="100" value={textOffsetX} onChange={(e) => setTextOffsetX(Number(e.target.value))} /></label>
                 <label className="range-control"><span><b>세로 위치</b><small>{textOffsetY > 0 ? `+${textOffsetY}` : textOffsetY}</small></span><input aria-label="텍스트 세로 위치" type="range" min="-100" max="100" value={textOffsetY} onChange={(e) => setTextOffsetY(Number(e.target.value))} /></label>
+              </div>
+            </div>
+            <div className="editor-section">
+              <div className="editor-heading"><div><h3>추가 텍스트</h3><p>최대 6개까지 각각 자유롭게 배치할 수 있어요.</p></div><button className="add-text-button" onClick={addExtraText} disabled={extraTexts.length >= 6}>＋ 추가</button></div>
+              {!extraTexts.length && <p className="empty-editor-note">추가 버튼을 누르면 새 텍스트 조절 항목이 생겨요.</p>}
+              <div className="extra-text-list">
+                {extraTexts.map((item, index) => (
+                  <div className="extra-text-card" key={item.id}>
+                    <div className="extra-text-head"><b>텍스트 {index + 1}</b><button aria-label={`텍스트 ${index + 1} 삭제`} onClick={() => setExtraTexts((items) => items.filter((candidate) => candidate.id !== item.id))}>삭제</button></div>
+                    <input className="extra-text-input" aria-label={`추가 텍스트 ${index + 1} 내용`} value={item.text} maxLength={80} onChange={(e) => updateExtraText(item.id, { text: e.target.value })} />
+                    <div className="align-row compact">
+                      <span>정렬</span>
+                      <div className="segmented align-options">
+                        {([['left', '왼쪽'], ['center', '가운데'], ['right', '오른쪽']] as const).map(([key, label]) => (
+                          <button key={key} className={item.align === key ? "active" : ""} onClick={() => updateExtraText(item.id, { align: key })}>{label}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="slider-grid extra-text-sliders">
+                      <label className="range-control full"><span><b>글자 크기</b><small>{item.size.toFixed(1)}%</small></span><input aria-label={`추가 텍스트 ${index + 1} 글자 크기`} type="range" min="1.8" max="8" step="0.2" value={item.size} onChange={(e) => updateExtraText(item.id, { size: Number(e.target.value) })} /></label>
+                      <label className="range-control"><span><b>가로 위치</b><small>{item.x}%</small></span><input aria-label={`추가 텍스트 ${index + 1} 가로 위치`} type="range" min="4" max="96" value={item.x} onChange={(e) => updateExtraText(item.id, { x: Number(e.target.value) })} /></label>
+                      <label className="range-control"><span><b>세로 위치</b><small>{item.y}%</small></span><input aria-label={`추가 텍스트 ${index + 1} 세로 위치`} type="range" min="4" max="96" value={item.y} onChange={(e) => updateExtraText(item.id, { y: Number(e.target.value) })} /></label>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
             <div className="editor-section">

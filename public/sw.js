@@ -1,4 +1,4 @@
-const CACHE = "lp-video-maker-v3";
+const CACHE = "lp-video-maker-v5";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(["./", "./manifest.webmanifest"])));
