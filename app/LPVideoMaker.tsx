@@ -119,18 +119,6 @@ function drawRotatingVinylTexture(ctx: CanvasRenderingContext2D, radius: number,
   ctx.closePath();
   ctx.fill();
 
-  const specks = [
-    { radius: .59, angle: 1.42, size: .005 },
-    { radius: .71, angle: 2.7, size: .004 },
-    { radius: .84, angle: 4.15, size: .006 },
-    { radius: .92, angle: 5.3, size: .0035 },
-  ];
-  ctx.fillStyle = "rgba(255,255,248,.24)";
-  specks.forEach((speck) => {
-    ctx.beginPath();
-    ctx.arc(Math.cos(speck.angle) * radius * speck.radius, Math.sin(speck.angle) * radius * speck.radius, Math.max(1, short * speck.size), 0, Math.PI * 2);
-    ctx.fill();
-  });
   ctx.restore();
 }
 
