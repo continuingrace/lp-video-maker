@@ -2,11 +2,13 @@
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-type RatioKey = "portrait" | "square" | "landscape";
+type RatioKey = "portrait" | "portrait45" | "square" | "landscape";
 type QualityKey = "compact" | "full";
+type TextPositionKey = "below" | "bottom";
 
 const RATIOS: Record<RatioKey, { label: string; ratio: number }> = {
-  portrait: { label: "세로 9:16", ratio: 9 / 16 },
+  portrait: { label: "스토리 9:16", ratio: 9 / 16 },
+  portrait45: { label: "피드 4:5", ratio: 4 / 5 },
   square: { label: "정사각 1:1", ratio: 1 },
   landscape: { label: "가로 16:9", ratio: 16 / 9 },
 };
@@ -33,12 +35,6 @@ function fileStem(name: string) {
   return name.replace(/\.[^/.]+$/, "").replace(/[\\/:*?"<>|]+/g, "-").trim() || "LP-video";
 }
 
-function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  const radius = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.roundRect(x, y, w, h, radius);
-}
-
 function coverImage(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, w: number, h: number) {
   const sourceRatio = image.naturalWidth / image.naturalHeight;
   const targetRatio = w / h;
@@ -63,6 +59,7 @@ function drawFrame(
   title: string,
   subtitle: string,
   accent: string,
+  textPosition: TextPositionKey,
 ) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -144,36 +141,21 @@ function drawFrame(
   ctx.fill();
   ctx.restore();
 
-  const armScale = discRadius;
-  ctx.save();
-  ctx.translate(discX + discRadius * .72, discY - discRadius * .9);
-  ctx.rotate(.19);
-  ctx.strokeStyle = "rgba(238,235,221,.9)";
-  ctx.lineWidth = armScale * .045;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(-armScale * .18, armScale * 1.02);
-  ctx.stroke();
-  ctx.fillStyle = "#d5d0c2";
-  roundedRect(ctx, -armScale * .28, armScale * .92, armScale * .22, armScale * .13, armScale * .035);
-  ctx.fill();
-  ctx.fillStyle = accent;
-  ctx.beginPath();
-  ctx.arc(0, 0, armScale * .095, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
   if (title || subtitle) {
-    const bottom = h - short * .12;
+    const titleY = textPosition === "below"
+      ? Math.min(h - short * .17, discY + discRadius + short * .09)
+      : h - short * (subtitle ? .176 : .12);
+    const subtitleY = textPosition === "below"
+      ? titleY + short * .052
+      : h - short * .12;
     ctx.textAlign = "center";
     ctx.fillStyle = "#fffdf5";
     ctx.font = `700 ${Math.round(short * .052)}px -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif`;
-    ctx.fillText(title, w / 2, bottom - (subtitle ? short * .056 : 0), w - short * .14);
+    if (title) ctx.fillText(title, w / 2, titleY, w - short * .14);
     if (subtitle) {
       ctx.fillStyle = "rgba(255,253,245,.72)";
       ctx.font = `500 ${Math.round(short * .025)}px -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif`;
-      ctx.fillText(subtitle, w / 2, bottom, w - short * .18);
+      ctx.fillText(subtitle, w / 2, title ? subtitleY : titleY, w - short * .18);
     }
   }
   ctx.restore();
@@ -199,6 +181,7 @@ export default function LPVideoMaker() {
   const [quality, setQuality] = useState<QualityKey>("compact");
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
+  const [textPosition, setTextPosition] = useState<TextPositionKey>("below");
   const [accent, setAccent] = useState("#e2ff62");
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
@@ -218,8 +201,8 @@ export default function LPVideoMaker() {
 
   const paintStill = useCallback((angle = 0) => {
     if (!canvasRef.current) return;
-    drawFrame(canvasRef.current, imageRef.current, angle, title, subtitle, accent);
-  }, [title, subtitle, accent]);
+    drawFrame(canvasRef.current, imageRef.current, angle, title, subtitle, accent, textPosition);
+  }, [title, subtitle, accent, textPosition]);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -532,7 +515,7 @@ export default function LPVideoMaker() {
           <section className="control-card">
             <div className="step-title"><span>2</span><div><h2>화면 꾸미기</h2><p>원하는 비율과 글자를 정해 주세요.</p></div></div>
             <div className="field-label"><span>영상 비율</span></div>
-            <div className="segmented three">
+            <div className="segmented ratio-grid">
               {(Object.keys(RATIOS) as RatioKey[]).map((key) => (
                 <button key={key} className={ratio === key ? "active" : ""} onClick={() => setRatio(key)}>{RATIOS[key].label}</button>
               ))}
@@ -540,6 +523,13 @@ export default function LPVideoMaker() {
             <div className="text-fields">
               <label><span>제목 <small>선택</small></span><input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={34} placeholder="예: 시편 23편" /></label>
               <label><span>작은 설명 <small>선택</small></span><input value={subtitle} onChange={(e) => setSubtitle(e.target.value)} maxLength={50} placeholder="예: 임마누엘성가대 리허설" /></label>
+            </div>
+            <div className="text-position-field">
+              <div className="field-label"><span>텍스트 위치</span></div>
+              <div className="segmented text-position">
+                <button className={textPosition === "below" ? "active" : ""} onClick={() => setTextPosition("below")}>LP 바로 아래</button>
+                <button className={textPosition === "bottom" ? "active" : ""} onClick={() => setTextPosition("bottom")}>화면 하단</button>
+              </div>
             </div>
             <div className="accent-row">
               <span>포인트 색상</span>
