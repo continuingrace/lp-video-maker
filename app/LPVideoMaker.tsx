@@ -6,7 +6,7 @@ type RatioKey = "portrait" | "portrait45" | "square" | "landscape";
 type QualityKey = "fast" | "compact" | "full";
 type TextPositionKey = "below" | "bottom";
 type TextAlignKey = "left" | "center" | "right";
-type ExtraTextItem = { id: string; text: string; align: TextAlignKey; x: number; y: number; size: number; opacity: number };
+type ExtraTextItem = { id: string; text: string; align: TextAlignKey; x: number; y: number; size: number; opacity: number; color: string };
 
 const RATIOS: Record<RatioKey, { label: string; ratio: number }> = {
   portrait: { label: "스토리 9:16", ratio: 9 / 16 },
@@ -132,8 +132,7 @@ function drawFrame(
   textOffsetY: number,
   titleSize: number,
   subtitleSize: number,
-  titleLineHeight: number,
-  subtitleLineHeight: number,
+  textGapSize: number,
   titleOpacity: number,
   subtitleOpacity: number,
   titleColor: string,
@@ -241,17 +240,19 @@ function drawFrame(
   if (title || subtitle) {
     const titleFontSize = short * (titleSize / 100);
     const subtitleFontSize = short * (subtitleSize / 100);
+    const titleInternalLineHeight = 1.15;
+    const subtitleInternalLineHeight = 1.35;
     const titleRows = title ? textLines(title).length : 0;
     const subtitleRows = subtitle ? textLines(subtitle).length : 0;
-    const titleHeight = titleRows ? titleFontSize + Math.max(0, titleRows - 1) * titleFontSize * titleLineHeight : 0;
-    const subtitleHeight = subtitleRows ? subtitleFontSize + Math.max(0, subtitleRows - 1) * subtitleFontSize * subtitleLineHeight : 0;
-    const textGap = title && subtitle ? short * .022 : 0;
+    const titleHeight = titleRows ? titleFontSize + Math.max(0, titleRows - 1) * titleFontSize * titleInternalLineHeight : 0;
+    const subtitleHeight = subtitleRows ? subtitleFontSize + Math.max(0, subtitleRows - 1) * subtitleFontSize * subtitleInternalLineHeight : 0;
+    const textGap = title && subtitle ? short * (textGapSize / 100) : 0;
     const blockHeight = titleHeight + textGap + subtitleHeight;
     const naturalTop = textPosition === "below"
       ? discY + discRadius + short * .058
       : h - short * .08 - blockHeight;
     const blockTop = Math.min(h - short * .06 - blockHeight, naturalTop);
-    const rawShiftY = (textOffsetY / 100) * h * .18;
+    const rawShiftY = (textOffsetY / 100) * h * .36;
     const shiftY = Math.max(short * .06 - blockTop, Math.min(h - short * .06 - (blockTop + blockHeight), rawShiftY));
     const anchorX = (align: TextAlignKey) => {
       const base = align === "left" ? short * .09 : align === "right" ? w - short * .09 : w / 2;
@@ -260,12 +261,12 @@ function drawFrame(
     let nextTop = blockTop + shiftY;
     ctx.font = `700 ${Math.round(titleFontSize)}px -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif`;
     if (title) {
-      drawTextLines(ctx, title, anchorX(titleAlign), nextTop + titleFontSize, w - short * .18, titleFontSize, titleLineHeight, titleAlign, titleColor, titleOpacity);
+      drawTextLines(ctx, title, anchorX(titleAlign), nextTop + titleFontSize, w - short * .18, titleFontSize, titleInternalLineHeight, titleAlign, titleColor, titleOpacity);
       nextTop += titleHeight + textGap;
     }
     if (subtitle) {
       ctx.font = `500 ${Math.round(subtitleFontSize)}px -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif`;
-      drawTextLines(ctx, subtitle, anchorX(subtitleAlign), nextTop + subtitleFontSize, w - short * .18, subtitleFontSize, subtitleLineHeight, subtitleAlign, subtitleColor, subtitleOpacity);
+      drawTextLines(ctx, subtitle, anchorX(subtitleAlign), nextTop + subtitleFontSize, w - short * .18, subtitleFontSize, subtitleInternalLineHeight, subtitleAlign, subtitleColor, subtitleOpacity);
     }
   }
   if (extraTexts.length) {
@@ -277,6 +278,7 @@ function drawFrame(
       if (!item.text.trim()) return;
       ctx.save();
       ctx.globalAlpha = Math.max(0, Math.min(100, item.opacity)) / 100;
+      ctx.fillStyle = item.color;
       ctx.textAlign = item.align;
       ctx.textBaseline = "middle";
       ctx.font = `600 ${Math.round(short * (item.size / 100))}px -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif`;
@@ -318,8 +320,7 @@ export default function LPVideoMaker() {
   const [textOffsetY, setTextOffsetY] = useState(0);
   const [titleSize, setTitleSize] = useState(5.2);
   const [subtitleSize, setSubtitleSize] = useState(2.5);
-  const [titleLineHeight, setTitleLineHeight] = useState(1.15);
-  const [subtitleLineHeight, setSubtitleLineHeight] = useState(1.35);
+  const [textGapSize, setTextGapSize] = useState(2.2);
   const [titleOpacity, setTitleOpacity] = useState(100);
   const [subtitleOpacity, setSubtitleOpacity] = useState(72);
   const [titleColor, setTitleColor] = useState("#fffdf5");
@@ -371,8 +372,7 @@ export default function LPVideoMaker() {
       textOffsetY,
       titleSize,
       subtitleSize,
-      titleLineHeight,
-      subtitleLineHeight,
+      textGapSize,
       titleOpacity,
       subtitleOpacity,
       titleColor,
@@ -388,7 +388,7 @@ export default function LPVideoMaker() {
       grainEnabled ? grainAmount : 0,
       extraTexts,
     );
-  }, [title, subtitle, accent, textPosition, titleAlign, subtitleAlign, textOffsetX, textOffsetY, titleSize, subtitleSize, titleLineHeight, subtitleLineHeight, titleOpacity, subtitleOpacity, titleColor, subtitleColor, imageZoom, imageOffsetX, imageOffsetY, labelZoom, labelOffsetX, labelOffsetY, filterColor, filterOpacity, grainEnabled, grainAmount, extraTexts]);
+  }, [title, subtitle, accent, textPosition, titleAlign, subtitleAlign, textOffsetX, textOffsetY, titleSize, subtitleSize, textGapSize, titleOpacity, subtitleOpacity, titleColor, subtitleColor, imageZoom, imageOffsetX, imageOffsetY, labelZoom, labelOffsetX, labelOffsetY, filterColor, filterOpacity, grainEnabled, grainAmount, extraTexts]);
 
   function addExtraText() {
     if (extraTexts.length >= 6) return;
@@ -401,6 +401,7 @@ export default function LPVideoMaker() {
       y: Math.min(90, 68 + index * 7),
       size: 3.2,
       opacity: 100,
+      color: "#fffdf5",
     }]);
   }
 
@@ -807,23 +808,22 @@ export default function LPVideoMaker() {
               </div>
             </div>
             <div className="editor-section">
-              <div className="editor-heading"><div><h3>기본 텍스트 스타일</h3><p>제목과 설명을 각각 조절할 수 있어요.</p></div><button className="reset-button" onClick={() => { setTitleSize(5.2); setSubtitleSize(2.5); setTitleLineHeight(1.15); setSubtitleLineHeight(1.35); setTitleOpacity(100); setSubtitleOpacity(72); setTitleColor("#fffdf5"); setSubtitleColor("#fffdf5"); }}>초기화</button></div>
+              <div className="editor-heading"><div><h3>기본 텍스트 스타일</h3><p>제목·설명 스타일과 두 줄 사이 간격을 조절해요.</p></div><button className="reset-button" onClick={() => { setTitleSize(5.2); setSubtitleSize(2.5); setTextGapSize(2.2); setTitleOpacity(100); setSubtitleOpacity(72); setTitleColor("#fffdf5"); setSubtitleColor("#fffdf5"); }}>초기화</button></div>
               <div className="base-text-style-card">
                 <div className="style-card-head"><b>제목</b><label className="color-control"><span>색상</span><input aria-label="제목 색상" type="color" value={titleColor} onChange={(e) => setTitleColor(e.target.value)} /></label></div>
                 <div className="slider-grid style-sliders">
                   <label className="range-control"><span><b>글자 크기</b><small>{titleSize.toFixed(1)}%</small></span><input aria-label="제목 글자 크기" type="range" min="2.5" max="10" step="0.1" value={titleSize} onChange={(e) => setTitleSize(Number(e.target.value))} /></label>
-                  <label className="range-control"><span><b>행간</b><small>{titleLineHeight.toFixed(2)}</small></span><input aria-label="제목 행간" type="range" min="0.9" max="2" step="0.05" value={titleLineHeight} onChange={(e) => setTitleLineHeight(Number(e.target.value))} /></label>
-                  <label className="range-control full"><span><b>투명도</b><small>{titleOpacity}%</small></span><input aria-label="제목 투명도" type="range" min="0" max="100" value={titleOpacity} onChange={(e) => setTitleOpacity(Number(e.target.value))} /></label>
+                  <label className="range-control"><span><b>투명도</b><small>{titleOpacity}%</small></span><input aria-label="제목 투명도" type="range" min="0" max="100" value={titleOpacity} onChange={(e) => setTitleOpacity(Number(e.target.value))} /></label>
                 </div>
               </div>
               <div className="base-text-style-card">
                 <div className="style-card-head"><b>설명</b><label className="color-control"><span>색상</span><input aria-label="설명 색상" type="color" value={subtitleColor} onChange={(e) => setSubtitleColor(e.target.value)} /></label></div>
                 <div className="slider-grid style-sliders">
                   <label className="range-control"><span><b>글자 크기</b><small>{subtitleSize.toFixed(1)}%</small></span><input aria-label="설명 글자 크기" type="range" min="1.3" max="7" step="0.1" value={subtitleSize} onChange={(e) => setSubtitleSize(Number(e.target.value))} /></label>
-                  <label className="range-control"><span><b>행간</b><small>{subtitleLineHeight.toFixed(2)}</small></span><input aria-label="설명 행간" type="range" min="0.9" max="2" step="0.05" value={subtitleLineHeight} onChange={(e) => setSubtitleLineHeight(Number(e.target.value))} /></label>
-                  <label className="range-control full"><span><b>투명도</b><small>{subtitleOpacity}%</small></span><input aria-label="설명 투명도" type="range" min="0" max="100" value={subtitleOpacity} onChange={(e) => setSubtitleOpacity(Number(e.target.value))} /></label>
+                  <label className="range-control"><span><b>투명도</b><small>{subtitleOpacity}%</small></span><input aria-label="설명 투명도" type="range" min="0" max="100" value={subtitleOpacity} onChange={(e) => setSubtitleOpacity(Number(e.target.value))} /></label>
                 </div>
               </div>
+              <label className="range-control text-gap-control"><span><b>제목과 설명 사이 간격</b><small>{textGapSize.toFixed(1)}%</small></span><input aria-label="제목과 설명 사이 간격" type="range" min="0" max="12" step="0.2" value={textGapSize} onChange={(e) => setTextGapSize(Number(e.target.value))} /></label>
             </div>
             <div className="editor-section">
               <div className="editor-heading"><div><h3>추가 텍스트</h3><p>최대 6개까지 각각 자유롭게 배치할 수 있어요.</p></div><button className="add-text-button" onClick={addExtraText} disabled={extraTexts.length >= 6}>＋ 추가</button></div>
@@ -833,6 +833,7 @@ export default function LPVideoMaker() {
                   <div className="extra-text-card" key={item.id}>
                     <div className="extra-text-head"><b>텍스트 {index + 1}</b><button aria-label={`텍스트 ${index + 1} 삭제`} onClick={() => setExtraTexts((items) => items.filter((candidate) => candidate.id !== item.id))}>삭제</button></div>
                     <input className="extra-text-input" aria-label={`추가 텍스트 ${index + 1} 내용`} value={item.text} maxLength={80} onChange={(e) => updateExtraText(item.id, { text: e.target.value })} />
+                    <label className="color-control extra-text-color"><span>글자 색상</span><input aria-label={`추가 텍스트 ${index + 1} 색상`} type="color" value={item.color} onChange={(e) => updateExtraText(item.id, { color: e.target.value })} /></label>
                     <div className="align-row compact">
                       <span>정렬</span>
                       <div className="segmented align-options">

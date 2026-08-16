@@ -103,6 +103,8 @@ button { color: inherit; }
 .style-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #5f5d56; font-size: 10px; }
 .style-card-head .color-control span { font-size: 9px; }
 .style-sliders { margin-top: 10px; }
+.text-gap-control { margin-top: 14px; padding: 12px; border: 1px solid #d9d5ca; border-radius: 13px; background: #fffefa; }
+.extra-text-color { justify-content: space-between; margin-top: 10px; }
 .align-row.compact { margin-top: 10px; }
 .extra-text-sliders { margin-top: 11px; }
 .align-row, .grain-row { display: flex; align-items: center; gap: 12px; margin-top: 9px; }
