@@ -5,6 +5,7 @@ import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "
 type RatioKey = "portrait" | "portrait45" | "square" | "landscape";
 type QualityKey = "compact" | "full";
 type TextPositionKey = "below" | "bottom";
+type TextAlignKey = "left" | "center" | "right";
 
 const RATIOS: Record<RatioKey, { label: string; ratio: number }> = {
   portrait: { label: "스토리 9:16", ratio: 9 / 16 },
@@ -35,21 +36,51 @@ function fileStem(name: string) {
   return name.replace(/\.[^/.]+$/, "").replace(/[\\/:*?"<>|]+/g, "-").trim() || "LP-video";
 }
 
-function coverImage(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, w: number, h: number) {
+function coverImage(
+  ctx: CanvasRenderingContext2D,
+  image: HTMLImageElement,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  zoom = 1,
+  offsetX = 0,
+  offsetY = 0,
+) {
   const sourceRatio = image.naturalWidth / image.naturalHeight;
   const targetRatio = w / h;
   let sw = image.naturalWidth;
   let sh = image.naturalHeight;
-  let sx = 0;
-  let sy = 0;
   if (sourceRatio > targetRatio) {
     sw = sh * targetRatio;
-    sx = (image.naturalWidth - sw) / 2;
   } else {
     sh = sw / targetRatio;
-    sy = (image.naturalHeight - sh) / 2;
   }
+  sw /= Math.max(1, zoom);
+  sh /= Math.max(1, zoom);
+  const sx = (image.naturalWidth - sw) * ((Math.max(-100, Math.min(100, offsetX)) + 100) / 200);
+  const sy = (image.naturalHeight - sh) * ((Math.max(-100, Math.min(100, offsetY)) + 100) / 200);
   ctx.drawImage(image, sx, sy, sw, sh, x, y, w, h);
+}
+
+function drawFilmGrain(ctx: CanvasRenderingContext2D, w: number, h: number, amount: number, angle: number) {
+  if (amount <= 0) return;
+  const strength = Math.max(0, Math.min(100, amount));
+  const count = Math.round(120 + strength * 6);
+  let seed = (Math.floor(angle * 10000) + 0x6d2b79f5) >>> 0;
+  const random = () => {
+    seed = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    seed ^= seed + Math.imul(seed ^ (seed >>> 7), 61 | seed);
+    return ((seed ^ (seed >>> 14)) >>> 0) / 4294967296;
+  };
+  ctx.save();
+  ctx.globalAlpha = .025 + strength * .0015;
+  for (let i = 0; i < count; i += 1) {
+    const size = 1 + random() * Math.max(1.2, Math.min(w, h) * .003);
+    ctx.fillStyle = random() > .5 ? "#ffffff" : "#000000";
+    ctx.fillRect(random() * w, random() * h, size, size);
+  }
+  ctx.restore();
 }
 
 function drawFrame(
@@ -60,6 +91,16 @@ function drawFrame(
   subtitle: string,
   accent: string,
   textPosition: TextPositionKey,
+  titleAlign: TextAlignKey,
+  subtitleAlign: TextAlignKey,
+  textOffsetX: number,
+  textOffsetY: number,
+  imageZoom: number,
+  imageOffsetX: number,
+  imageOffsetY: number,
+  filterColor: string,
+  filterOpacity: number,
+  grainAmount: number,
 ) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -70,11 +111,18 @@ function drawFrame(
   ctx.save();
   if (image) {
     ctx.filter = `blur(${Math.round(short * 0.045)}px) saturate(.72) brightness(.43)`;
-    coverImage(ctx, image, -short * 0.08, -short * 0.08, w + short * 0.16, h + short * 0.16);
+    coverImage(ctx, image, -short * 0.08, -short * 0.08, w + short * 0.16, h + short * 0.16, imageZoom, imageOffsetX, imageOffsetY);
     ctx.filter = "none";
   } else {
     ctx.fillStyle = "#282823";
     ctx.fillRect(0, 0, w, h);
+  }
+  if (filterOpacity > 0) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(100, filterOpacity)) / 100;
+    ctx.fillStyle = filterColor;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
   }
   const shade = ctx.createLinearGradient(0, 0, 0, h);
   shade.addColorStop(0, "rgba(10,10,8,.2)");
@@ -82,6 +130,7 @@ function drawFrame(
   shade.addColorStop(1, "rgba(10,10,8,.78)");
   ctx.fillStyle = shade;
   ctx.fillRect(0, 0, w, h);
+  drawFilmGrain(ctx, w, h, grainAmount, angle);
 
   const discRadius = short * (w < h ? 0.39 : 0.31);
   const discX = w / 2;
@@ -122,7 +171,7 @@ function drawFrame(
   ctx.beginPath();
   ctx.arc(0, 0, labelRadius, 0, Math.PI * 2);
   ctx.clip();
-  if (image) coverImage(ctx, image, -labelRadius, -labelRadius, labelRadius * 2, labelRadius * 2);
+  if (image) coverImage(ctx, image, -labelRadius, -labelRadius, labelRadius * 2, labelRadius * 2, imageZoom, imageOffsetX, imageOffsetY);
   else {
     ctx.fillStyle = accent;
     ctx.fillRect(-labelRadius, -labelRadius, labelRadius * 2, labelRadius * 2);
@@ -148,14 +197,23 @@ function drawFrame(
     const subtitleY = textPosition === "below"
       ? titleY + short * .052
       : h - short * .12;
-    ctx.textAlign = "center";
+    const rawShiftY = (textOffsetY / 100) * h * .18;
+    const blockTop = title ? titleY : subtitleY;
+    const blockBottom = subtitle ? subtitleY : titleY;
+    const shiftY = Math.max(short * .06 - blockTop, Math.min(h - short * .06 - blockBottom, rawShiftY));
+    const anchorX = (align: TextAlignKey) => {
+      const base = align === "left" ? short * .09 : align === "right" ? w - short * .09 : w / 2;
+      return Math.max(short * .04, Math.min(w - short * .04, base + (textOffsetX / 100) * w * .22));
+    };
+    ctx.textAlign = titleAlign;
     ctx.fillStyle = "#fffdf5";
     ctx.font = `700 ${Math.round(short * .052)}px -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif`;
-    if (title) ctx.fillText(title, w / 2, titleY, w - short * .14);
+    if (title) ctx.fillText(title, anchorX(titleAlign), titleY + shiftY, w - short * .18);
     if (subtitle) {
+      ctx.textAlign = subtitleAlign;
       ctx.fillStyle = "rgba(255,253,245,.72)";
       ctx.font = `500 ${Math.round(short * .025)}px -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif`;
-      ctx.fillText(subtitle, w / 2, title ? subtitleY : titleY, w - short * .18);
+      ctx.fillText(subtitle, anchorX(subtitleAlign), (title ? subtitleY : titleY) + shiftY, w - short * .18);
     }
   }
   ctx.restore();
@@ -182,6 +240,17 @@ export default function LPVideoMaker() {
   const [title, setTitle] = useState("");
   const [subtitle, setSubtitle] = useState("");
   const [textPosition, setTextPosition] = useState<TextPositionKey>("below");
+  const [titleAlign, setTitleAlign] = useState<TextAlignKey>("center");
+  const [subtitleAlign, setSubtitleAlign] = useState<TextAlignKey>("center");
+  const [textOffsetX, setTextOffsetX] = useState(0);
+  const [textOffsetY, setTextOffsetY] = useState(0);
+  const [imageZoom, setImageZoom] = useState(100);
+  const [imageOffsetX, setImageOffsetX] = useState(0);
+  const [imageOffsetY, setImageOffsetY] = useState(0);
+  const [filterColor, setFilterColor] = useState("#111827");
+  const [filterOpacity, setFilterOpacity] = useState(0);
+  const [grainEnabled, setGrainEnabled] = useState(false);
+  const [grainAmount, setGrainAmount] = useState(24);
   const [accent, setAccent] = useState("#e2ff62");
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
@@ -201,8 +270,26 @@ export default function LPVideoMaker() {
 
   const paintStill = useCallback((angle = 0) => {
     if (!canvasRef.current) return;
-    drawFrame(canvasRef.current, imageRef.current, angle, title, subtitle, accent, textPosition);
-  }, [title, subtitle, accent, textPosition]);
+    drawFrame(
+      canvasRef.current,
+      imageRef.current,
+      angle,
+      title,
+      subtitle,
+      accent,
+      textPosition,
+      titleAlign,
+      subtitleAlign,
+      textOffsetX,
+      textOffsetY,
+      imageZoom / 100,
+      imageOffsetX,
+      imageOffsetY,
+      filterColor,
+      filterOpacity,
+      grainEnabled ? grainAmount : 0,
+    );
+  }, [title, subtitle, accent, textPosition, titleAlign, subtitleAlign, textOffsetX, textOffsetY, imageZoom, imageOffsetX, imageOffsetY, filterColor, filterOpacity, grainEnabled, grainAmount]);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -530,6 +617,57 @@ export default function LPVideoMaker() {
                 <button className={textPosition === "below" ? "active" : ""} onClick={() => setTextPosition("below")}>LP 바로 아래</button>
                 <button className={textPosition === "bottom" ? "active" : ""} onClick={() => setTextPosition("bottom")}>화면 하단</button>
               </div>
+            </div>
+            <div className="editor-section">
+              <div className="editor-heading"><div><h3>텍스트 정렬·위치</h3><p>제목과 설명은 따로 정렬할 수 있어요.</p></div><button className="reset-button" onClick={() => { setTitleAlign("center"); setSubtitleAlign("center"); setTextOffsetX(0); setTextOffsetY(0); }}>초기화</button></div>
+              <div className="align-row">
+                <span>제목 정렬</span>
+                <div className="segmented align-options">
+                  {([['left', '왼쪽'], ['center', '가운데'], ['right', '오른쪽']] as const).map(([key, label]) => (
+                    <button key={key} className={titleAlign === key ? "active" : ""} onClick={() => setTitleAlign(key)}>{label}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="align-row">
+                <span>설명 정렬</span>
+                <div className="segmented align-options">
+                  {([['left', '왼쪽'], ['center', '가운데'], ['right', '오른쪽']] as const).map(([key, label]) => (
+                    <button key={key} className={subtitleAlign === key ? "active" : ""} onClick={() => setSubtitleAlign(key)}>{label}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="slider-grid">
+                <label className="range-control"><span><b>가로 위치</b><small>{textOffsetX > 0 ? `+${textOffsetX}` : textOffsetX}</small></span><input aria-label="텍스트 가로 위치" type="range" min="-100" max="100" value={textOffsetX} onChange={(e) => setTextOffsetX(Number(e.target.value))} /></label>
+                <label className="range-control"><span><b>세로 위치</b><small>{textOffsetY > 0 ? `+${textOffsetY}` : textOffsetY}</small></span><input aria-label="텍스트 세로 위치" type="range" min="-100" max="100" value={textOffsetY} onChange={(e) => setTextOffsetY(Number(e.target.value))} /></label>
+              </div>
+            </div>
+            <div className="editor-section">
+              <div className="editor-heading"><div><h3>사진 위치·확대</h3><p>배경과 LP 중앙 사진에 함께 적용돼요.</p></div><button className="reset-button" onClick={() => { setImageZoom(100); setImageOffsetX(0); setImageOffsetY(0); }}>초기화</button></div>
+              <div className="slider-grid">
+                <label className="range-control full"><span><b>확대</b><small>{imageZoom}%</small></span><input aria-label="사진 확대" type="range" min="100" max="240" value={imageZoom} onChange={(e) => setImageZoom(Number(e.target.value))} /></label>
+                <label className="range-control"><span><b>가로 이동</b><small>{imageOffsetX > 0 ? `+${imageOffsetX}` : imageOffsetX}</small></span><input aria-label="사진 가로 이동" type="range" min="-100" max="100" value={imageOffsetX} onChange={(e) => setImageOffsetX(Number(e.target.value))} /></label>
+                <label className="range-control"><span><b>세로 이동</b><small>{imageOffsetY > 0 ? `+${imageOffsetY}` : imageOffsetY}</small></span><input aria-label="사진 세로 이동" type="range" min="-100" max="100" value={imageOffsetY} onChange={(e) => setImageOffsetY(Number(e.target.value))} /></label>
+              </div>
+            </div>
+            <div className="editor-section">
+              <div className="editor-heading"><div><h3>배경 필터·필름 그레인</h3><p>LP판과 글자는 선명하게 유지돼요.</p></div></div>
+              <div className="filter-row">
+                <label className="color-control"><span>필터 색상</span><input aria-label="배경 필터 색상" type="color" value={filterColor} onChange={(e) => setFilterColor(e.target.value)} /></label>
+                <div className="filter-swatches" aria-label="추천 필터 색상">
+                  {["#111827", "#24160f", "#17312b", "#321c35"].map((color) => (
+                    <button key={color} aria-label={`${color} 필터`} className={filterColor === color ? "active" : ""} style={{ background: color }} onClick={() => setFilterColor(color)} />
+                  ))}
+                </div>
+              </div>
+              <label className="range-control full"><span><b>필터 농도</b><small>{filterOpacity}%</small></span><input aria-label="배경 필터 농도" type="range" min="0" max="75" value={filterOpacity} onChange={(e) => setFilterOpacity(Number(e.target.value))} /></label>
+              <div className="grain-row">
+                <span>필름 그레인</span>
+                <div className="segmented grain-toggle">
+                  <button className={!grainEnabled ? "active" : ""} onClick={() => setGrainEnabled(false)}>끄기</button>
+                  <button className={grainEnabled ? "active" : ""} onClick={() => setGrainEnabled(true)}>켜기</button>
+                </div>
+              </div>
+              <label className={`range-control full ${grainEnabled ? "" : "disabled"}`}><span><b>그레인 강도</b><small>{grainAmount}%</small></span><input aria-label="필름 그레인 강도" type="range" min="5" max="100" value={grainAmount} disabled={!grainEnabled} onChange={(e) => setGrainAmount(Number(e.target.value))} /></label>
             </div>
             <div className="accent-row">
               <span>포인트 색상</span>

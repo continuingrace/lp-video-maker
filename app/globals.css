@@ -70,6 +70,8 @@ button { color: inherit; }
 .segmented.ratio-grid { grid-template-columns: repeat(2, 1fr); }
 .segmented.quality { grid-template-columns: 1fr 1fr; margin-top: 2px; }
 .segmented.text-position { grid-template-columns: 1fr 1fr; margin-top: 8px; }
+.segmented.align-options { grid-template-columns: repeat(3, 1fr); flex: 1; }
+.segmented.grain-toggle { grid-template-columns: 1fr 1fr; width: 150px; }
 .segmented button { min-height: 41px; border: 0; border-radius: 10px; background: transparent; color: #77746c; font-size: 11px; font-weight: 720; cursor: pointer; }
 .segmented button.active { background: var(--card); color: var(--ink); box-shadow: 0 1px 4px rgba(44,39,29,.1); }
 .segmented.quality button { display: flex; justify-content: space-between; align-items: center; padding: 0 13px; }
@@ -80,6 +82,28 @@ button { color: inherit; }
 .text-fields input { width: 100%; height: 42px; border: 1px solid #d6d1c5; border-radius: 11px; padding: 0 12px; outline: none; background: #fffefa; font-size: 12px; }
 .text-fields input:focus { border-color: #6e6d63; box-shadow: 0 0 0 3px rgba(40,40,35,.08); }
 .text-position-field { margin-top: 15px; }
+.editor-section { margin-top: 16px; padding: 15px; border: 1px solid #dfdbd0; border-radius: 16px; background: rgba(247,245,238,.76); }
+.editor-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 13px; }
+.editor-heading h3 { margin: 0 0 3px; font-size: 12px; letter-spacing: -.02em; }
+.editor-heading p { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.45; }
+.reset-button { flex: none; min-height: 28px; padding: 0 10px; border: 1px solid #d2cec2; border-radius: 9px; background: var(--card); color: #6f6c64; font-size: 9px; font-weight: 700; cursor: pointer; }
+.align-row, .grain-row { display: flex; align-items: center; gap: 12px; margin-top: 9px; }
+.align-row > span, .grain-row > span { width: 58px; flex: none; color: #5f5d56; font-size: 10px; font-weight: 750; }
+.align-options button, .grain-toggle button { min-height: 34px; font-size: 9px; }
+.slider-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px 14px; margin-top: 14px; }
+.range-control { min-width: 0; display: block; }
+.range-control.full { grid-column: 1 / -1; margin-top: 12px; }
+.range-control > span { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 7px; color: #5f5d56; font-size: 10px; }
+.range-control b { font-weight: 750; }
+.range-control small { color: #8e8b82; font-size: 9px; font-variant-numeric: tabular-nums; }
+.range-control input[type="range"] { width: 100%; height: 20px; margin: 0; accent-color: var(--ink); cursor: pointer; }
+.range-control.disabled { opacity: .42; }
+.filter-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.color-control { display: flex; align-items: center; gap: 9px; color: #5f5d56; font-size: 10px; font-weight: 750; }
+.color-control input { width: 34px; height: 30px; padding: 2px; border: 1px solid #d2cec2; border-radius: 9px; background: var(--card); }
+.filter-swatches { display: flex; gap: 7px; }
+.filter-swatches button { width: 25px; height: 25px; border: 3px solid var(--card); border-radius: 50%; box-shadow: 0 0 0 1px #d2cec2; cursor: pointer; }
+.filter-swatches button.active { box-shadow: 0 0 0 2px var(--ink); }
 .accent-row { display: flex; gap: 9px; align-items: center; margin-top: 15px; }
 .accent-row > span { margin: 0 auto 0 0; }
 .accent-row button { width: 28px; height: 28px; border: 3px solid var(--card); border-radius: 50%; box-shadow: 0 0 0 1px #d2cec2; cursor: pointer; }
@@ -128,6 +152,12 @@ footer p { margin: 0; text-align: right; }
   .privacy-pill i { margin: 0; width: 7px; height: 7px; }
   .control-card, .output-card { padding: 18px; border-radius: 21px; }
   .text-fields { grid-template-columns: 1fr; }
+  .editor-section { padding: 13px; }
+  .slider-grid { grid-template-columns: 1fr; }
+  .range-control.full { grid-column: auto; }
+  .align-row { align-items: flex-start; flex-direction: column; gap: 6px; }
+  .align-row > span { width: auto; }
+  .segmented.align-options { width: 100%; }
   .upload-box { min-height: 113px; padding: 13px; }
   .segmented.ratio-grid button { font-size: 10px; }
   footer { display: block; text-align: center; line-height: 1.55; }
