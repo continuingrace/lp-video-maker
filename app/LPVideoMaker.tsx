@@ -102,12 +102,17 @@ function drawTextLines(
   opacity: number,
 ) {
   ctx.save();
-  ctx.textAlign = align;
+  ctx.textAlign = "left";
   ctx.textBaseline = "alphabetic";
   ctx.fillStyle = color;
   ctx.globalAlpha = Math.max(0, Math.min(100, opacity)) / 100;
   textLines(text).forEach((line, index) => {
-    if (line) ctx.fillText(line, x, firstBaseline + index * fontSize * lineHeight, maxWidth);
+    const cleanLine = line.trim();
+    if (!cleanLine) return;
+    const measuredWidth = ctx.measureText(cleanLine).width;
+    const renderedWidth = Math.min(measuredWidth, maxWidth);
+    const drawX = align === "center" ? x - renderedWidth / 2 : align === "right" ? x - renderedWidth : x;
+    ctx.fillText(cleanLine, drawX, firstBaseline + index * fontSize * lineHeight, maxWidth);
   });
   ctx.restore();
 }
@@ -300,6 +305,7 @@ export default function LPVideoMaker() {
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [labelImageFile, setLabelImageFile] = useState<File | null>(null);
+  const [labelUsesBackground, setLabelUsesBackground] = useState(true);
   const [duration, setDuration] = useState(0);
   const [ratio, setRatio] = useState<RatioKey>("portrait");
   const [quality, setQuality] = useState<QualityKey>("compact");
@@ -494,6 +500,10 @@ export default function LPVideoMaker() {
     image.onload = () => {
       imageRef.current = image;
       setImageFile(file);
+      if (labelUsesBackground) {
+        labelImageRef.current = image;
+        setLabelImageFile(file);
+      }
       paintStill();
       URL.revokeObjectURL(url);
     };
@@ -512,6 +522,7 @@ export default function LPVideoMaker() {
     image.onload = () => {
       labelImageRef.current = image;
       setLabelImageFile(file);
+      setLabelUsesBackground(false);
       paintStill();
       URL.revokeObjectURL(url);
     };
@@ -520,6 +531,14 @@ export default function LPVideoMaker() {
       URL.revokeObjectURL(url);
     };
     image.src = url;
+  }
+
+  function useBackgroundForLabel() {
+    if (!imageRef.current || !imageFile) return;
+    labelImageRef.current = imageRef.current;
+    setLabelImageFile(imageFile);
+    setLabelUsesBackground(true);
+    paintStill();
   }
 
   function stopEverything() {
@@ -734,9 +753,15 @@ export default function LPVideoMaker() {
                 <input type="file" accept="image/*,.heic,.heif" onChange={onLabelImage} />
                 <span className="upload-icon">●</span>
                 <b>{labelImageFile ? labelImageFile.name : "LP 가운데 이미지"}</b>
-                <small>{labelImageFile ? formatBytes(labelImageFile.size) : "선택 · 없으면 배경 사용"}</small>
+                <small>{labelImageFile ? (labelUsesBackground ? "배경 사진과 동일 · 눌러서 변경" : `${formatBytes(labelImageFile.size)} · 별도 사진`) : "배경 사진 선택 시 자동 적용"}</small>
               </label>
             </div>
+            {labelImageFile && (
+              <div className="label-image-status">
+                <span>{labelUsesBackground ? "LP 가운데에도 배경 사진을 사용 중이에요." : "LP 가운데에 다른 사진을 사용 중이에요."}</span>
+                {!labelUsesBackground && <button onClick={useBackgroundForLabel}>배경 사진으로 되돌리기</button>}
+              </div>
+            )}
           </section>
 
           <section className="control-card">

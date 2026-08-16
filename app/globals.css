@@ -66,6 +66,8 @@ button { color: inherit; }
 .upload-icon { width: 30px; height: 30px; margin-bottom: 6px; border-radius: 9px; background: var(--ink); color: var(--accent); display: grid; place-items: center; font-weight: 800; }
 .upload-box b { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .upload-box small { color: var(--muted); font-size: 10px; }
+.label-image-status { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; padding: 9px 11px; border-radius: 11px; background: #efede5; color: #747168; font-size: 9px; line-height: 1.45; }
+.label-image-status button { flex: none; min-height: 28px; padding: 0 9px; border: 1px solid #d1cdc1; border-radius: 8px; background: var(--card); color: #5f5d56; font-size: 9px; font-weight: 750; cursor: pointer; }
 .field-label { margin: 0 0 8px; font-size: 11px; font-weight: 750; color: #5f5d56; }
 .segmented { display: grid; gap: 5px; padding: 4px; border-radius: 14px; background: #ede9df; }
 .segmented.ratio-grid { grid-template-columns: repeat(2, 1fr); }
@@ -178,6 +180,7 @@ footer p { margin: 0; text-align: right; }
   .upload-box { min-height: 113px; padding: 13px; }
   .upload-grid.three-files { grid-template-columns: 1fr 1fr; }
   .upload-grid.three-files .upload-box:last-child { grid-column: 1 / -1; min-height: 96px; }
+  .label-image-status { align-items: flex-start; flex-direction: column; }
   .segmented.ratio-grid button { font-size: 10px; }
   footer { display: block; text-align: center; line-height: 1.55; }
   footer p { margin-top: 6px; text-align: center; }
