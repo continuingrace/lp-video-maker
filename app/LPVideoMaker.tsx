@@ -85,6 +85,53 @@ function drawFilmGrain(ctx: CanvasRenderingContext2D, w: number, h: number, amou
   ctx.restore();
 }
 
+function drawRotatingVinylTexture(ctx: CanvasRenderingContext2D, radius: number, short: number) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(0, 0, radius * .982, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.globalCompositeOperation = "screen";
+  ctx.lineCap = "round";
+
+  const glints = [
+    { radius: .56, start: -.98, length: .54, alpha: .16 },
+    { radius: .64, start: -.92, length: .43, alpha: .12 },
+    { radius: .73, start: -.86, length: .64, alpha: .14 },
+    { radius: .82, start: -.78, length: .47, alpha: .11 },
+    { radius: .9, start: -.7, length: .58, alpha: .14 },
+  ];
+  glints.forEach((glint) => {
+    ctx.strokeStyle = `rgba(255,255,248,${glint.alpha})`;
+    ctx.lineWidth = Math.max(1, short * .0022);
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * glint.radius, glint.start, glint.start + glint.length);
+    ctx.stroke();
+  });
+
+  ctx.fillStyle = "rgba(255,255,248,.055)";
+  ctx.beginPath();
+  ctx.moveTo(Math.cos(.18) * radius * .47, Math.sin(.18) * radius * .47);
+  ctx.arc(0, 0, radius * .95, .1, .31);
+  ctx.lineTo(Math.cos(.38) * radius * .47, Math.sin(.38) * radius * .47);
+  ctx.arc(0, 0, radius * .47, .38, .18, true);
+  ctx.closePath();
+  ctx.fill();
+
+  const specks = [
+    { radius: .59, angle: 1.42, size: .005 },
+    { radius: .71, angle: 2.7, size: .004 },
+    { radius: .84, angle: 4.15, size: .006 },
+    { radius: .92, angle: 5.3, size: .0035 },
+  ];
+  ctx.fillStyle = "rgba(255,255,248,.24)";
+  specks.forEach((speck) => {
+    ctx.beginPath();
+    ctx.arc(Math.cos(speck.angle) * radius * speck.radius, Math.sin(speck.angle) * radius * speck.radius, Math.max(1, short * speck.size), 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.restore();
+}
+
 function textLines(text: string) {
   return text.replace(/\r/g, "").split("\n");
 }
@@ -222,6 +269,7 @@ function drawFrame(
   }
 
   ctx.rotate(angle);
+  drawRotatingVinylTexture(ctx, discRadius, short);
   const labelRadius = discRadius * .43;
   ctx.save();
   ctx.beginPath();
