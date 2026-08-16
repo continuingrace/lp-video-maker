@@ -3,7 +3,7 @@
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type RatioKey = "portrait" | "portrait45" | "square" | "landscape";
-type QualityKey = "compact" | "full";
+type QualityKey = "fast" | "compact" | "full";
 type TextPositionKey = "below" | "bottom";
 type TextAlignKey = "left" | "center" | "right";
 type ExtraTextItem = { id: string; text: string; align: TextAlignKey; x: number; y: number; size: number };
@@ -15,9 +15,10 @@ const RATIOS: Record<RatioKey, { label: string; ratio: number }> = {
   landscape: { label: "가로 16:9", ratio: 16 / 9 },
 };
 
-const QUALITIES: Record<QualityKey, { label: string; width: number; bitrate: number; hint: string }> = {
-  compact: { label: "용량 절약", width: 720, bitrate: 1_400_000, hint: "추천" },
-  full: { label: "고화질", width: 1080, bitrate: 3_000_000, hint: "Full HD" },
+const QUALITIES: Record<QualityKey, { label: string; width: number; bitrate: number; audioBitrate: number; fps: number; hint: string; fixedWidth?: boolean }> = {
+  fast: { label: "빠른 저용량", width: 1080, bitrate: 1_050_000, audioBitrate: 96_000, fps: 15, hint: "15fps", fixedWidth: true },
+  compact: { label: "용량 절약", width: 720, bitrate: 1_400_000, audioBitrate: 128_000, fps: 30, hint: "추천" },
+  full: { label: "고화질", width: 1080, bitrate: 3_000_000, audioBitrate: 128_000, fps: 30, hint: "Full HD" },
 };
 
 function formatTime(seconds: number) {
@@ -277,13 +278,15 @@ export default function LPVideoMaker() {
   const [installHint, setInstallHint] = useState(false);
 
   const dims = useMemo(() => {
-    const width = QUALITIES[quality].width;
+    const preset = QUALITIES[quality];
+    const width = preset.width;
     const selected = RATIOS[ratio].ratio;
+    if (preset.fixedWidth) return { width, height: Math.round(width / selected) };
     if (selected <= 1) return { width, height: Math.round(width / selected) };
     return { width: Math.round(width * selected), height: width };
   }, [quality, ratio]);
 
-  const estimatedBytes = duration ? (duration * (QUALITIES[quality].bitrate + 128_000)) / 8 : 0;
+  const estimatedBytes = duration ? (duration * (QUALITIES[quality].bitrate + QUALITIES[quality].audioBitrate)) / 8 : 0;
 
   const paintStill = useCallback((angle = 0) => {
     if (!canvasRef.current) return;
@@ -368,15 +371,20 @@ export default function LPVideoMaker() {
   }
 
   function animate(mode: "preview" | "render") {
-    const loop = () => {
+    const targetFps = mode === "render" ? QUALITIES[quality].fps : 30;
+    let lastFrame = 0;
+    const loop = (now: number) => {
       const audio = audioRef.current;
       if (!audio || audio.paused || audio.ended) return;
-      const seconds = mode === "render" ? (performance.now() - renderStartRef.current) / 1000 : audio.currentTime;
-      const angle = seconds * (33.333 / 60) * Math.PI * 2;
-      paintStill(angle);
-      if (mode === "render" && performance.now() - lastProgressRef.current > 250) {
-        lastProgressRef.current = performance.now();
-        setProgress(Math.min(1, audio.currentTime / Math.max(audio.duration, .01)));
+      if (!lastFrame || now - lastFrame >= 1000 / targetFps) {
+        lastFrame = now;
+        const seconds = mode === "render" ? (now - renderStartRef.current) / 1000 : audio.currentTime;
+        const angle = seconds * (33.333 / 60) * Math.PI * 2;
+        paintStill(angle);
+        if (mode === "render" && now - lastProgressRef.current > 250) {
+          lastProgressRef.current = now;
+          setProgress(Math.min(1, audio.currentTime / Math.max(audio.duration, .01)));
+        }
       }
       animationRef.current = requestAnimationFrame(loop);
     };
@@ -490,7 +498,7 @@ export default function LPVideoMaker() {
       });
       await ensureAudioGraph();
       if (monitorGainRef.current) monitorGainRef.current.gain.value = 0;
-      const canvasStream = canvasRef.current.captureStream(30);
+      const canvasStream = canvasRef.current.captureStream(QUALITIES[quality].fps);
       const audioTrack = mediaDestinationRef.current?.stream.getAudioTracks()[0];
       if (!audioTrack) throw new Error("오디오 트랙을 준비하지 못했어요.");
       const stream = new MediaStream([...canvasStream.getVideoTracks(), audioTrack]);
@@ -498,7 +506,7 @@ export default function LPVideoMaker() {
       const recorder = new MediaRecorder(stream, {
         ...(mimeType ? { mimeType } : {}),
         videoBitsPerSecond: QUALITIES[quality].bitrate,
-        audioBitsPerSecond: 128_000,
+        audioBitsPerSecond: QUALITIES[quality].audioBitrate,
       });
       recorderRef.current = recorder;
       const chunks: Blob[] = [];
@@ -750,6 +758,7 @@ export default function LPVideoMaker() {
               <span>{dims.width} × {dims.height}px</span>
               <span>예상 최대 {estimatedBytes ? formatBytes(estimatedBytes) : "—"}</span>
             </div>
+            {quality === "fast" && <p className="quality-note">15fps로 기기 부담과 용량을 줄여요. 완성 시간은 녹음 길이와 같아요.</p>}
             {isRendering && (
               <div className="progress-wrap" aria-live="polite">
                 <div><span>LP가 돌아가는 중</span><b>{Math.round(progress * 100)}%</b></div>

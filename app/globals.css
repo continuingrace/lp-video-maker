@@ -68,13 +68,13 @@ button { color: inherit; }
 .field-label { margin: 0 0 8px; font-size: 11px; font-weight: 750; color: #5f5d56; }
 .segmented { display: grid; gap: 5px; padding: 4px; border-radius: 14px; background: #ede9df; }
 .segmented.ratio-grid { grid-template-columns: repeat(2, 1fr); }
-.segmented.quality { grid-template-columns: 1fr 1fr; margin-top: 2px; }
+.segmented.quality { grid-template-columns: repeat(3, 1fr); margin-top: 2px; }
 .segmented.text-position { grid-template-columns: 1fr 1fr; margin-top: 8px; }
 .segmented.align-options { grid-template-columns: repeat(3, 1fr); flex: 1; }
 .segmented.grain-toggle { grid-template-columns: 1fr 1fr; width: 150px; }
 .segmented button { min-height: 41px; border: 0; border-radius: 10px; background: transparent; color: #77746c; font-size: 11px; font-weight: 720; cursor: pointer; }
 .segmented button.active { background: var(--card); color: var(--ink); box-shadow: 0 1px 4px rgba(44,39,29,.1); }
-.segmented.quality button { display: flex; justify-content: space-between; align-items: center; padding: 0 13px; }
+.segmented.quality button { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2px; padding: 0 6px; }
 .segmented.quality button small { opacity: .62; font-size: 9px; }
 .text-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; }
 .text-fields label > span, .accent-row > span { display: block; margin: 0 0 7px; font-size: 11px; font-weight: 750; color: #5f5d56; }
@@ -120,6 +120,7 @@ button { color: inherit; }
 .accent-row button { width: 28px; height: 28px; border: 3px solid var(--card); border-radius: 50%; box-shadow: 0 0 0 1px #d2cec2; cursor: pointer; }
 .accent-row button.active { box-shadow: 0 0 0 2px var(--ink); }
 .render-summary { display: flex; justify-content: space-between; margin: 11px 2px 0; color: var(--muted); font-size: 10px; }
+.quality-note { margin: 9px 2px 0; padding: 9px 10px; border-radius: 10px; background: #f0eee6; color: #706d64; font-size: 9px; line-height: 1.5; }
 .make-button, .share-button { width: 100%; min-height: 52px; margin-top: 17px; border: 0; border-radius: 15px; background: var(--ink); color: #fff; font-size: 13px; font-weight: 800; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 11px; }
 .make-button span { color: var(--accent); font-size: 20px; }
 .make-button:disabled { background: #b7b3aa; cursor: default; }
