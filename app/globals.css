@@ -52,6 +52,14 @@ button { color: inherit; }
 .install-tip > span { font-size: 16px; margin-right: 4px; color: #3066b0; }
 
 .controls-column { display: grid; gap: 15px; }
+.project-save-card { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 15px 17px; border: 1px solid #cfd4ab; border-radius: 18px; background: rgba(244,248,225,.9); box-shadow: 0 7px 24px rgba(40,36,28,.05); }
+.project-save-copy { min-width: 0; display: flex; align-items: flex-start; gap: 10px; }
+.project-save-copy > span { width: 24px; height: 24px; flex: none; display: grid; place-items: center; border-radius: 50%; background: var(--ink); color: var(--accent); font-size: 7px; }
+.project-save-copy b { display: block; margin-bottom: 2px; font-size: 12px; }
+.project-save-copy p { margin: 0; color: #6f705d; font-size: 9px; line-height: 1.45; }
+.project-save-copy small { display: block; margin-top: 3px; color: #92947c; font-size: 8px; }
+.project-save-card button { flex: none; min-height: 38px; padding: 0 13px; border: 0; border-radius: 11px; background: var(--ink); color: #fff; font-size: 10px; font-weight: 800; cursor: pointer; }
+.project-save-card button:disabled { opacity: .48; cursor: default; }
 .control-card, .output-card { background: rgba(255,254,250,.88); border: 1px solid rgba(207,202,190,.85); border-radius: 24px; padding: 22px; box-shadow: 0 7px 24px rgba(40,36,28,.05); backdrop-filter: blur(16px); }
 .step-title { display: flex; gap: 12px; align-items: flex-start; margin-bottom: 20px; }
 .step-title > span { width: 29px; height: 29px; display: grid; place-items: center; flex: none; border: 1px solid #bdb8aa; border-radius: 50%; font: 800 12px/1 ui-monospace, monospace; }
@@ -183,6 +191,8 @@ footer p { margin: 0; text-align: right; }
   .upload-grid.three-files { grid-template-columns: 1fr 1fr; }
   .upload-grid.three-files .upload-box:last-child { grid-column: 1 / -1; min-height: 96px; }
   .label-image-status { align-items: flex-start; flex-direction: column; }
+  .project-save-card { align-items: stretch; flex-direction: column; gap: 11px; }
+  .project-save-card button { width: 100%; }
   .segmented.ratio-grid button { font-size: 10px; }
   footer { display: block; text-align: center; line-height: 1.55; }
   footer p { margin-top: 6px; text-align: center; }

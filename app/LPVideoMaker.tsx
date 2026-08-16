@@ -7,6 +7,70 @@ type QualityKey = "fast" | "compact" | "full";
 type TextPositionKey = "below" | "bottom";
 type TextAlignKey = "left" | "center" | "right";
 type ExtraTextItem = { id: string; text: string; align: TextAlignKey; x: number; y: number; size: number; opacity: number; color: string };
+type StoredFile = { blob: Blob; name: string; type: string; lastModified: number };
+type SavedProject = {
+  version: 1;
+  savedAt: number;
+  audio: StoredFile | null;
+  background: StoredFile | null;
+  label: StoredFile | null;
+  labelUsesBackground: boolean;
+  settings: {
+    ratio: RatioKey; quality: QualityKey; title: string; subtitle: string; textPosition: TextPositionKey;
+    titleAlign: TextAlignKey; subtitleAlign: TextAlignKey; textOffsetX: number; textOffsetY: number;
+    titleSize: number; subtitleSize: number; textGapSize: number; titleOpacity: number; subtitleOpacity: number;
+    titleColor: string; subtitleColor: string; imageZoom: number; imageOffsetX: number; imageOffsetY: number;
+    labelZoom: number; labelOffsetX: number; labelOffsetY: number; lightDirection: number; rimMotion: number;
+    filterColor: string; filterOpacity: number; grainEnabled: boolean; grainAmount: number;
+    extraTexts: ExtraTextItem[]; accent: string;
+  };
+};
+
+const PROJECT_DB = "lp-video-maker-projects";
+const PROJECT_STORE = "projects";
+const CURRENT_PROJECT_KEY = "current";
+
+function openProjectDb() {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(PROJECT_DB, 1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(PROJECT_STORE)) request.result.createObjectStore(PROJECT_STORE);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("저장 공간을 열지 못했어요."));
+  });
+}
+
+async function saveProjectRecord(project: SavedProject) {
+  const db = await openProjectDb();
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction(PROJECT_STORE, "readwrite");
+    transaction.objectStore(PROJECT_STORE).put(project, CURRENT_PROJECT_KEY);
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error ?? new Error("프로젝트를 저장하지 못했어요."));
+    transaction.onabort = () => reject(transaction.error ?? new Error("프로젝트 저장이 중단됐어요."));
+  });
+  db.close();
+}
+
+async function readProjectRecord() {
+  const db = await openProjectDb();
+  const project = await new Promise<SavedProject | undefined>((resolve, reject) => {
+    const request = db.transaction(PROJECT_STORE, "readonly").objectStore(PROJECT_STORE).get(CURRENT_PROJECT_KEY);
+    request.onsuccess = () => resolve(request.result as SavedProject | undefined);
+    request.onerror = () => reject(request.error ?? new Error("저장한 프로젝트를 읽지 못했어요."));
+  });
+  db.close();
+  return project;
+}
+
+function storeFile(file: File | null): StoredFile | null {
+  return file ? { blob: file, name: file.name, type: file.type, lastModified: file.lastModified } : null;
+}
+
+function restoreFile(file: StoredFile | null) {
+  return file ? new File([file.blob], file.name, { type: file.type, lastModified: file.lastModified }) : null;
+}
 
 const RATIOS: Record<RatioKey, { label: string; ratio: number }> = {
   portrait: { label: "스토리 9:16", ratio: 9 / 16 },
@@ -428,6 +492,9 @@ export default function LPVideoMaker() {
   const [output, setOutput] = useState<{ url: string; file: File } | null>(null);
   const [message, setMessage] = useState("");
   const [installHint, setInstallHint] = useState(false);
+  const [projectStatus, setProjectStatus] = useState("저장한 프로젝트를 확인하는 중이에요.");
+  const [projectSavedAt, setProjectSavedAt] = useState<number | null>(null);
+  const [isProjectBusy, setIsProjectBusy] = useState(false);
 
   const dims = useMemo(() => {
     const preset = QUALITIES[quality];
@@ -499,6 +566,86 @@ export default function LPVideoMaker() {
   function updateExtraText(id: string, patch: Partial<ExtraTextItem>) {
     setExtraTexts((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item));
   }
+
+  useEffect(() => {
+    let cancelled = false;
+    const decodeImage = (file: File) => new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image();
+      const url = URL.createObjectURL(file);
+      image.onload = () => {
+        URL.revokeObjectURL(url);
+        resolve(image);
+      };
+      image.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("저장된 이미지를 다시 불러오지 못했어요."));
+      };
+      image.src = url;
+    });
+
+    const restoreSavedProject = async () => {
+      if (!("indexedDB" in window)) {
+        setProjectStatus("이 브라우저에서는 프로젝트 저장을 지원하지 않아요.");
+        return;
+      }
+      try {
+        const project = await readProjectRecord();
+        if (!project || cancelled) {
+          setProjectStatus("현재 작업을 이 기기에 저장할 수 있어요.");
+          return;
+        }
+        const settings = project.settings;
+        setRatio(settings.ratio); setQuality(settings.quality); setTitle(settings.title); setSubtitle(settings.subtitle);
+        setTextPosition(settings.textPosition); setTitleAlign(settings.titleAlign); setSubtitleAlign(settings.subtitleAlign);
+        setTextOffsetX(settings.textOffsetX); setTextOffsetY(settings.textOffsetY); setTitleSize(settings.titleSize);
+        setSubtitleSize(settings.subtitleSize); setTextGapSize(settings.textGapSize); setTitleOpacity(settings.titleOpacity);
+        setSubtitleOpacity(settings.subtitleOpacity); setTitleColor(settings.titleColor); setSubtitleColor(settings.subtitleColor);
+        setImageZoom(settings.imageZoom); setImageOffsetX(settings.imageOffsetX); setImageOffsetY(settings.imageOffsetY);
+        setLabelZoom(settings.labelZoom); setLabelOffsetX(settings.labelOffsetX); setLabelOffsetY(settings.labelOffsetY);
+        setLightDirection(settings.lightDirection); setRimMotion(settings.rimMotion); setFilterColor(settings.filterColor);
+        setFilterOpacity(settings.filterOpacity); setGrainEnabled(settings.grainEnabled); setGrainAmount(settings.grainAmount);
+        setExtraTexts(settings.extraTexts); setAccent(settings.accent);
+
+        const restoredAudio = restoreFile(project.audio);
+        if (restoredAudio) {
+          const audio = new Audio();
+          audio.preload = "metadata";
+          audio.src = URL.createObjectURL(restoredAudio);
+          audioRef.current = audio;
+          setAudioFile(restoredAudio);
+          audio.addEventListener("loadedmetadata", () => setDuration(audio.duration), { once: true });
+          audio.load();
+        }
+
+        const restoredBackground = restoreFile(project.background);
+        const restoredLabel = restoreFile(project.label);
+        if (restoredBackground) {
+          const backgroundImage = await decodeImage(restoredBackground);
+          if (cancelled) return;
+          imageRef.current = backgroundImage;
+          setImageFile(restoredBackground);
+          if (project.labelUsesBackground) {
+            labelImageRef.current = backgroundImage;
+            setLabelImageFile(restoredBackground);
+          }
+        }
+        if (!project.labelUsesBackground && restoredLabel) {
+          const labelImage = await decodeImage(restoredLabel);
+          if (cancelled) return;
+          labelImageRef.current = labelImage;
+          setLabelImageFile(restoredLabel);
+        }
+        setLabelUsesBackground(project.labelUsesBackground);
+        setProjectSavedAt(project.savedAt);
+        setProjectStatus("저장한 프로젝트를 다시 불러왔어요.");
+        paintStillRef.current();
+      } catch {
+        if (!cancelled) setProjectStatus("저장한 프로젝트를 불러오지 못했어요. 새로 저장해 주세요.");
+      }
+    };
+    void restoreSavedProject();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -633,6 +780,40 @@ export default function LPVideoMaker() {
     paintStill();
   }
 
+  async function saveCurrentProject() {
+    if (!("indexedDB" in window)) {
+      setProjectStatus("이 브라우저에서는 프로젝트 저장을 지원하지 않아요.");
+      return;
+    }
+    try {
+      setIsProjectBusy(true);
+      setProjectStatus("녹음과 사진, 설정을 저장하는 중이에요.");
+      const savedAt = Date.now();
+      await saveProjectRecord({
+        version: 1,
+        savedAt,
+        audio: storeFile(audioFile),
+        background: storeFile(imageFile),
+        label: labelUsesBackground ? null : storeFile(labelImageFile),
+        labelUsesBackground,
+        settings: {
+          ratio, quality, title, subtitle, textPosition, titleAlign, subtitleAlign, textOffsetX, textOffsetY,
+          titleSize, subtitleSize, textGapSize, titleOpacity, subtitleOpacity, titleColor, subtitleColor,
+          imageZoom, imageOffsetX, imageOffsetY, labelZoom, labelOffsetX, labelOffsetY, lightDirection, rimMotion,
+          filterColor, filterOpacity, grainEnabled, grainAmount, extraTexts, accent,
+        },
+      });
+      if (navigator.storage?.persist) await navigator.storage.persist().catch(() => false);
+      setProjectSavedAt(savedAt);
+      setProjectStatus("현재 프로젝트를 이 기기에 저장했어요.");
+    } catch (error) {
+      const quotaError = error instanceof DOMException && error.name === "QuotaExceededError";
+      setProjectStatus(quotaError ? "기기 저장 공간이 부족해요. 용량을 비운 뒤 다시 저장해 주세요." : "프로젝트 저장에 실패했어요. 다시 시도해 주세요.");
+    } finally {
+      setIsProjectBusy(false);
+    }
+  }
+
   function stopEverything() {
     if (animationRef.current) cancelAnimationFrame(animationRef.current);
     animationRef.current = null;
@@ -673,8 +854,8 @@ export default function LPVideoMaker() {
 
   function supportedMime() {
     const candidates = [
-      "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
       "video/mp4",
+      "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
       "video/webm;codecs=vp9,opus",
       "video/webm;codecs=vp8,opus",
       "video/webm",
@@ -699,11 +880,15 @@ export default function LPVideoMaker() {
         return null;
       });
       await ensureAudioGraph();
-      if (monitorGainRef.current) monitorGainRef.current.gain.value = 0;
+      if (monitorGainRef.current) monitorGainRef.current.gain.value = .0001;
       const canvasStream = canvasRef.current.captureStream(QUALITIES[quality].fps);
-      const audioTrack = mediaDestinationRef.current?.stream.getAudioTracks()[0];
-      if (!audioTrack) throw new Error("오디오 트랙을 준비하지 못했어요.");
-      const stream = new MediaStream([...canvasStream.getVideoTracks(), audioTrack]);
+      const sourceAudioTrack = mediaDestinationRef.current?.stream.getAudioTracks()[0];
+      if (!sourceAudioTrack || sourceAudioTrack.readyState !== "live") throw new Error("오디오 트랙을 준비하지 못했어요. 앱을 완전히 종료한 뒤 다시 열어 주세요.");
+      sourceAudioTrack.enabled = true;
+      const stream = new MediaStream();
+      canvasStream.getVideoTracks().forEach((track) => stream.addTrack(track));
+      stream.addTrack(sourceAudioTrack);
+      if (stream.getAudioTracks().length !== 1 || stream.getVideoTracks().length !== 1) throw new Error("영상과 소리를 하나로 합치지 못했어요.");
       const mimeType = supportedMime();
       const recorder = new MediaRecorder(stream, {
         ...(mimeType ? { mimeType } : {}),
@@ -729,7 +914,12 @@ export default function LPVideoMaker() {
       audio.pause();
       audio.currentTime = 0;
       paintStill(0);
-      recorder.start(1000);
+      const recorderStarted = new Promise<void>((resolve) => {
+        recorder.addEventListener("start", () => resolve(), { once: true });
+        window.setTimeout(resolve, 300);
+      });
+      recorder.start();
+      await recorderStarted;
       setIsRendering(true);
       renderStartRef.current = performance.now();
       lastProgressRef.current = 0;
@@ -747,10 +937,12 @@ export default function LPVideoMaker() {
       finishPlaybackRef.current = null;
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
       const cancelled = !audio.ended;
+      if (!cancelled) await new Promise((resolve) => window.setTimeout(resolve, 160));
       if (recorder.state === "recording") recorder.stop();
       await completed;
       await wakeLock?.release();
-      stream.getTracks().forEach((track) => track.stop());
+      stream.getVideoTracks().forEach((track) => track.stop());
+      stream.removeTrack(sourceAudioTrack);
 
       if (cancelled) {
         setProgress(0);
@@ -826,6 +1018,17 @@ export default function LPVideoMaker() {
         </div>
 
         <div className="controls-column">
+          <section className="project-save-card" aria-live="polite">
+            <div className="project-save-copy">
+              <span aria-hidden="true">●</span>
+              <div>
+                <b>현재 프로젝트</b>
+                <p>{projectStatus}</p>
+                {projectSavedAt && <small>{new Date(projectSavedAt).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 저장</small>}
+              </div>
+            </div>
+            <button onClick={saveCurrentProject} disabled={isProjectBusy}>{isProjectBusy ? "저장 중…" : "현재 프로젝트 저장"}</button>
+          </section>
           <section className="control-card">
             <div className="step-title"><span>1</span><div><h2>파일 고르기</h2><p>녹음과 배경 사진을 고르고, LP 가운데 사진은 선택할 수 있어요.</p></div></div>
             <div className="upload-grid three-files">
