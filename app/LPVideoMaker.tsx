@@ -89,6 +89,16 @@ function textLines(text: string) {
   return text.replace(/\r/g, "").split("\n");
 }
 
+function colorWithOpacity(color: string, opacity: number) {
+  const normalized = color.replace("#", "");
+  const expanded = normalized.length === 3 ? normalized.split("").map((value) => value + value).join("") : normalized;
+  const value = Number.parseInt(expanded, 16);
+  const red = Number.isFinite(value) ? (value >> 16) & 255 : 255;
+  const green = Number.isFinite(value) ? (value >> 8) & 255 : 255;
+  const blue = Number.isFinite(value) ? value & 255 : 255;
+  return `rgba(${red}, ${green}, ${blue}, ${Math.max(0, Math.min(100, opacity)) / 100})`;
+}
+
 function drawTextLines(
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -277,8 +287,8 @@ function drawFrame(
     extraTexts.forEach((item) => {
       if (!item.text.trim()) return;
       ctx.save();
-      ctx.globalAlpha = Math.max(0, Math.min(100, item.opacity)) / 100;
-      ctx.fillStyle = item.color;
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = colorWithOpacity(item.color, item.opacity);
       ctx.textAlign = item.align;
       ctx.textBaseline = "middle";
       ctx.font = `600 ${Math.round(short * (item.size / 100))}px -apple-system, BlinkMacSystemFont, "Pretendard", sans-serif`;
@@ -296,6 +306,7 @@ export default function LPVideoMaker() {
   const imageRef = useRef<HTMLImageElement | null>(null);
   const labelImageRef = useRef<HTMLImageElement | null>(null);
   const animationRef = useRef<number | null>(null);
+  const paintStillRef = useRef<(angle?: number) => void>(() => undefined);
   const audioContextRef = useRef<AudioContext | null>(null);
   const monitorGainRef = useRef<GainNode | null>(null);
   const mediaDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
@@ -390,6 +401,10 @@ export default function LPVideoMaker() {
     );
   }, [title, subtitle, accent, textPosition, titleAlign, subtitleAlign, textOffsetX, textOffsetY, titleSize, subtitleSize, textGapSize, titleOpacity, subtitleOpacity, titleColor, subtitleColor, imageZoom, imageOffsetX, imageOffsetY, labelZoom, labelOffsetX, labelOffsetY, filterColor, filterOpacity, grainEnabled, grainAmount, extraTexts]);
 
+  useEffect(() => {
+    paintStillRef.current = paintStill;
+  }, [paintStill]);
+
   function addExtraText() {
     if (extraTexts.length >= 6) return;
     const index = extraTexts.length;
@@ -460,7 +475,7 @@ export default function LPVideoMaker() {
         lastFrame = now;
         const seconds = mode === "render" ? (now - renderStartRef.current) / 1000 : audio.currentTime;
         const angle = seconds * (33.333 / 60) * Math.PI * 2;
-        paintStill(angle);
+        paintStillRef.current(angle);
         if (mode === "render" && now - lastProgressRef.current > 250) {
           lastProgressRef.current = now;
           setProgress(Math.min(1, audio.currentTime / Math.max(audio.duration, .01)));
@@ -846,7 +861,7 @@ export default function LPVideoMaker() {
                       <label className="range-control full"><span><b>글자 크기</b><small>{item.size.toFixed(1)}%</small></span><input aria-label={`추가 텍스트 ${index + 1} 글자 크기`} type="range" min="1.8" max="8" step="0.2" value={item.size} onChange={(e) => updateExtraText(item.id, { size: Number(e.target.value) })} /></label>
                       <label className="range-control"><span><b>가로 위치</b><small>{item.x}%</small></span><input aria-label={`추가 텍스트 ${index + 1} 가로 위치`} type="range" min="4" max="96" value={item.x} onChange={(e) => updateExtraText(item.id, { x: Number(e.target.value) })} /></label>
                       <label className="range-control"><span><b>세로 위치</b><small>{item.y}%</small></span><input aria-label={`추가 텍스트 ${index + 1} 세로 위치`} type="range" min="4" max="96" value={item.y} onChange={(e) => updateExtraText(item.id, { y: Number(e.target.value) })} /></label>
-                      <label className="range-control full"><span><b>투명도</b><small>{item.opacity}%</small></span><input aria-label={`추가 텍스트 ${index + 1} 투명도`} type="range" min="0" max="100" value={item.opacity} onChange={(e) => updateExtraText(item.id, { opacity: Number(e.target.value) })} /></label>
+                      <label className="range-control full"><span><b>투명도</b><small>{item.opacity}%</small></span><input aria-label={`추가 텍스트 ${index + 1} 투명도`} type="range" min="0" max="100" value={item.opacity} onInput={(e) => updateExtraText(item.id, { opacity: Number(e.currentTarget.value) })} onChange={(e) => updateExtraText(item.id, { opacity: Number(e.target.value) })} /></label>
                     </div>
                   </div>
                 ))}
