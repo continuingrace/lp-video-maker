@@ -7,6 +7,8 @@ type QualityKey = "fast" | "compact" | "full";
 type TextPositionKey = "below" | "bottom";
 type TextAlignKey = "left" | "center" | "right";
 type ExtraTextItem = { id: string; text: string; align: TextAlignKey; x: number; y: number; size: number; opacity: number; color: string };
+type RenderWakeLock = { release: () => Promise<void>; released?: boolean };
+type ManualCanvasTrack = MediaStreamTrack & { requestFrame?: () => void };
 type StoredFile = { blob: Blob; name: string; type: string; lastModified: number };
 type SavedProject = {
   version: 1;
@@ -129,6 +131,43 @@ function coverImage(
   ctx.drawImage(image, sx, sy, sw, sh, x, y, w, h);
 }
 
+function drawStaticBackgroundLayer(
+  canvas: HTMLCanvasElement,
+  backgroundImage: HTMLImageElement | null,
+  imageZoom: number,
+  imageOffsetX: number,
+  imageOffsetY: number,
+  filterColor: string,
+  filterOpacity: number,
+) {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const { width: w, height: h } = canvas;
+  const short = Math.min(w, h);
+  ctx.clearRect(0, 0, w, h);
+  if (backgroundImage) {
+    ctx.filter = `blur(${Math.round(short * 0.045)}px) saturate(.72) brightness(.43)`;
+    coverImage(ctx, backgroundImage, -short * 0.08, -short * 0.08, w + short * 0.16, h + short * 0.16, imageZoom, imageOffsetX, imageOffsetY);
+    ctx.filter = "none";
+  } else {
+    ctx.fillStyle = "#282823";
+    ctx.fillRect(0, 0, w, h);
+  }
+  if (filterOpacity > 0) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, Math.min(100, filterOpacity)) / 100;
+    ctx.fillStyle = filterColor;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+  }
+  const shade = ctx.createLinearGradient(0, 0, 0, h);
+  shade.addColorStop(0, "rgba(10,10,8,.2)");
+  shade.addColorStop(.55, "rgba(10,10,8,.36)");
+  shade.addColorStop(1, "rgba(10,10,8,.78)");
+  ctx.fillStyle = shade;
+  ctx.fillRect(0, 0, w, h);
+}
+
 function drawFilmGrain(ctx: CanvasRenderingContext2D, w: number, h: number, amount: number, angle: number) {
   if (amount <= 0) return;
   const strength = Math.max(0, Math.min(100, amount));
@@ -182,6 +221,21 @@ function drawRotatingVinylTexture(ctx: CanvasRenderingContext2D, radius: number,
   ctx.arc(0, 0, radius * .47, bandEnd + .08, bandStart, true);
   ctx.closePath();
   ctx.fill();
+
+  const scratches = [
+    { radius: .58, start: -2.42, length: .34, alpha: .24 },
+    { radius: .67, start: .38, length: .19, alpha: .18 },
+    { radius: .77, start: 2.08, length: .42, alpha: .21 },
+    { radius: .87, start: -1.08, length: .27, alpha: .2 },
+    { radius: .93, start: 1.18, length: .16, alpha: .17 },
+  ];
+  scratches.forEach((scratch) => {
+    ctx.strokeStyle = `rgba(255,255,248,${scratch.alpha})`;
+    ctx.lineWidth = Math.max(1, short * .00135);
+    ctx.beginPath();
+    ctx.arc(0, 0, radius * scratch.radius, scratch.start, scratch.start + scratch.length);
+    ctx.stroke();
+  });
 
   ctx.restore();
 }
@@ -241,6 +295,7 @@ function drawTextLines(
 
 function drawFrame(
   canvas: HTMLCanvasElement,
+  backgroundLayer: HTMLCanvasElement | null,
   backgroundImage: HTMLImageElement | null,
   labelImage: HTMLImageElement | null,
   angle: number,
@@ -259,16 +314,11 @@ function drawFrame(
   subtitleOpacity: number,
   titleColor: string,
   subtitleColor: string,
-  imageZoom: number,
-  imageOffsetX: number,
-  imageOffsetY: number,
   labelZoom: number,
   labelOffsetX: number,
   labelOffsetY: number,
   lightDirection: number,
   rimMotion: number,
-  filterColor: string,
-  filterOpacity: number,
   grainAmount: number,
   extraTexts: ExtraTextItem[],
 ) {
@@ -279,27 +329,12 @@ function drawFrame(
   ctx.clearRect(0, 0, w, h);
 
   ctx.save();
-  if (backgroundImage) {
-    ctx.filter = `blur(${Math.round(short * 0.045)}px) saturate(.72) brightness(.43)`;
-    coverImage(ctx, backgroundImage, -short * 0.08, -short * 0.08, w + short * 0.16, h + short * 0.16, imageZoom, imageOffsetX, imageOffsetY);
-    ctx.filter = "none";
+  if (backgroundLayer && backgroundLayer.width === w && backgroundLayer.height === h) {
+    ctx.drawImage(backgroundLayer, 0, 0);
   } else {
     ctx.fillStyle = "#282823";
     ctx.fillRect(0, 0, w, h);
   }
-  if (filterOpacity > 0) {
-    ctx.save();
-    ctx.globalAlpha = Math.max(0, Math.min(100, filterOpacity)) / 100;
-    ctx.fillStyle = filterColor;
-    ctx.fillRect(0, 0, w, h);
-    ctx.restore();
-  }
-  const shade = ctx.createLinearGradient(0, 0, 0, h);
-  shade.addColorStop(0, "rgba(10,10,8,.2)");
-  shade.addColorStop(.55, "rgba(10,10,8,.36)");
-  shade.addColorStop(1, "rgba(10,10,8,.78)");
-  ctx.fillStyle = shade;
-  ctx.fillRect(0, 0, w, h);
   drawFilmGrain(ctx, w, h, grainAmount, angle);
 
   const discRadius = short * (w < h ? 0.39 : 0.31);
@@ -429,13 +464,20 @@ export default function LPVideoMaker() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const labelImageRef = useRef<HTMLImageElement | null>(null);
+  const backgroundLayerRef = useRef<{ key: string; canvas: HTMLCanvasElement } | null>(null);
   const animationRef = useRef<number | null>(null);
+  const renderTimerRef = useRef<number | null>(null);
+  const captureFrameRef = useRef<() => void>(() => undefined);
   const paintStillRef = useRef<(angle?: number) => void>(() => undefined);
   const audioContextRef = useRef<AudioContext | null>(null);
   const monitorGainRef = useRef<GainNode | null>(null);
   const mediaDestinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
-  const renderStartRef = useRef(0);
+  const renderStreamRef = useRef<MediaStream | null>(null);
+  const wakeLockRef = useRef<RenderWakeLock | null>(null);
+  const renderActiveRef = useRef(false);
+  const renderPausedRef = useRef(false);
+  const pauseRenderRef = useRef<() => void>(() => undefined);
   const lastProgressRef = useRef(0);
   const finishPlaybackRef = useRef<(() => void) | null>(null);
 
@@ -476,6 +518,7 @@ export default function LPVideoMaker() {
   const [accent, setAccent] = useState("#e2ff62");
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
+  const [isRenderPaused, setIsRenderPaused] = useState(false);
   const [progress, setProgress] = useState(0);
   const [output, setOutput] = useState<{ url: string; file: File } | null>(null);
   const [message, setMessage] = useState("");
@@ -497,8 +540,29 @@ export default function LPVideoMaker() {
 
   const paintStill = useCallback((angle = 0) => {
     if (!canvasRef.current) return;
+    const canvas = canvasRef.current;
+    const backgroundKey = [
+      canvas.width, canvas.height, imageFile?.name ?? "", imageFile?.size ?? 0, imageFile?.lastModified ?? 0,
+      imageZoom, imageOffsetX, imageOffsetY, filterColor, filterOpacity,
+    ].join(":");
+    if (!backgroundLayerRef.current || backgroundLayerRef.current.key !== backgroundKey) {
+      const backgroundCanvas = document.createElement("canvas");
+      backgroundCanvas.width = canvas.width;
+      backgroundCanvas.height = canvas.height;
+      drawStaticBackgroundLayer(
+        backgroundCanvas,
+        imageRef.current,
+        imageZoom / 100,
+        imageOffsetX,
+        imageOffsetY,
+        filterColor,
+        filterOpacity,
+      );
+      backgroundLayerRef.current = { key: backgroundKey, canvas: backgroundCanvas };
+    }
     drawFrame(
-      canvasRef.current,
+      canvas,
+      backgroundLayerRef.current.canvas,
       imageRef.current,
       labelImageRef.current,
       angle,
@@ -517,20 +581,15 @@ export default function LPVideoMaker() {
       subtitleOpacity,
       titleColor,
       subtitleColor,
-      imageZoom / 100,
-      imageOffsetX,
-      imageOffsetY,
       labelZoom / 100,
       labelOffsetX,
       labelOffsetY,
       lightDirection,
       rimMotion,
-      filterColor,
-      filterOpacity,
       grainEnabled ? grainAmount : 0,
       extraTexts,
     );
-  }, [title, subtitle, accent, textPosition, titleAlign, subtitleAlign, textOffsetX, textOffsetY, titleSize, subtitleSize, textGapSize, titleOpacity, subtitleOpacity, titleColor, subtitleColor, imageZoom, imageOffsetX, imageOffsetY, labelZoom, labelOffsetX, labelOffsetY, lightDirection, rimMotion, filterColor, filterOpacity, grainEnabled, grainAmount, extraTexts]);
+  }, [title, subtitle, accent, textPosition, titleAlign, subtitleAlign, textOffsetX, textOffsetY, titleSize, subtitleSize, textGapSize, titleOpacity, subtitleOpacity, titleColor, subtitleColor, imageFile, imageZoom, imageOffsetX, imageOffsetY, labelZoom, labelOffsetX, labelOffsetY, lightDirection, rimMotion, filterColor, filterOpacity, grainEnabled, grainAmount, extraTexts]);
 
   useEffect(() => {
     paintStillRef.current = paintStill;
@@ -650,7 +709,25 @@ export default function LPVideoMaker() {
     return () => {
       window.clearTimeout(hintTimer);
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      if (renderTimerRef.current) window.clearTimeout(renderTimerRef.current);
       if (audioRef.current?.src) URL.revokeObjectURL(audioRef.current.src);
+    };
+  }, []);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        pauseRenderRef.current();
+      } else if (renderActiveRef.current && !renderPausedRef.current && audioRef.current?.paused) {
+        pauseRenderRef.current();
+      }
+    };
+    const handlePageHide = () => pauseRenderRef.current();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pagehide", handlePageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", handlePageHide);
     };
   }, []);
 
@@ -676,25 +753,60 @@ export default function LPVideoMaker() {
     await audioContextRef.current.resume();
   }
 
+  function stopAnimationLoop() {
+    if (animationRef.current) cancelAnimationFrame(animationRef.current);
+    if (renderTimerRef.current) window.clearTimeout(renderTimerRef.current);
+    animationRef.current = null;
+    renderTimerRef.current = null;
+  }
+
   function animate(mode: "preview" | "render") {
     const targetFps = mode === "render" ? QUALITIES[quality].fps : 30;
+    stopAnimationLoop();
+    if (mode === "render") {
+      const frameInterval = 1000 / targetFps;
+      const renderLoop = () => {
+        const audio = audioRef.current;
+        if (!audio || audio.paused || audio.ended || renderPausedRef.current || !renderActiveRef.current) return;
+        const frameStarted = performance.now();
+        const videoTrack = renderStreamRef.current?.getVideoTracks()[0];
+        if (!videoTrack || videoTrack.readyState !== "live") {
+          setMessage("영상 프레임 기록이 멈춰 만들기를 중단했어요. 앱을 완전히 종료한 뒤 다시 시도해 주세요.");
+          stopEverything();
+          return;
+        }
+        try {
+          const angle = audio.currentTime * (33.333 / 60) * Math.PI * 2;
+          paintStillRef.current(angle);
+          captureFrameRef.current();
+          const now = performance.now();
+          if (now - lastProgressRef.current > 250) {
+            lastProgressRef.current = now;
+            setProgress(Math.min(1, audio.currentTime / Math.max(audio.duration, .01)));
+          }
+          const elapsed = performance.now() - frameStarted;
+          renderTimerRef.current = window.setTimeout(renderLoop, Math.max(4, frameInterval - elapsed));
+        } catch {
+          setMessage("LP 회전 프레임을 계속 만들지 못해 중단했어요. 앱을 완전히 종료한 뒤 다시 시도해 주세요.");
+          stopEverything();
+        }
+      };
+      renderLoop();
+      return;
+    }
+
     let lastFrame = 0;
     const loop = (now: number) => {
       const audio = audioRef.current;
       if (!audio || audio.paused || audio.ended) return;
       if (!lastFrame || now - lastFrame >= 1000 / targetFps) {
         lastFrame = now;
-        const seconds = mode === "render" ? (now - renderStartRef.current) / 1000 : audio.currentTime;
+        const seconds = audio.currentTime;
         const angle = seconds * (33.333 / 60) * Math.PI * 2;
         paintStillRef.current(angle);
-        if (mode === "render" && now - lastProgressRef.current > 250) {
-          lastProgressRef.current = now;
-          setProgress(Math.min(1, audio.currentTime / Math.max(audio.duration, .01)));
-        }
       }
       animationRef.current = requestAnimationFrame(loop);
     };
-    if (animationRef.current) cancelAnimationFrame(animationRef.current);
     animationRef.current = requestAnimationFrame(loop);
   }
 
@@ -802,18 +914,96 @@ export default function LPVideoMaker() {
     }
   }
 
+  async function requestRenderWakeLock() {
+    if (!("wakeLock" in navigator) || document.hidden) return;
+    if (wakeLockRef.current && !wakeLockRef.current.released) return;
+    wakeLockRef.current = await (navigator as Navigator & {
+      wakeLock: { request: (type: "screen") => Promise<RenderWakeLock> };
+    }).wakeLock.request("screen").catch(() => null);
+  }
+
+  function releaseRenderWakeLock() {
+    const wakeLock = wakeLockRef.current;
+    wakeLockRef.current = null;
+    if (wakeLock) void wakeLock.release().catch(() => undefined);
+  }
+
+  function cleanupRenderStream() {
+    const stream = renderStreamRef.current;
+    if (stream) {
+      stream.getVideoTracks().forEach((track) => track.stop());
+      stream.getAudioTracks().forEach((track) => stream.removeTrack(track));
+    }
+    renderStreamRef.current = null;
+    captureFrameRef.current = () => undefined;
+  }
+
+  function pauseRenderingForVisibility() {
+    if (!renderActiveRef.current || renderPausedRef.current) return;
+    const recorder = recorderRef.current;
+    const audio = audioRef.current;
+    renderPausedRef.current = true;
+    audio?.pause();
+    stopAnimationLoop();
+    releaseRenderWakeLock();
+    try {
+      if (!recorder || recorder.state !== "recording") throw new Error("영상 기록을 일시정지하지 못했어요.");
+      recorder.pause();
+      setIsRenderPaused(true);
+    } catch {
+      renderPausedRef.current = false;
+      setMessage("다른 앱으로 이동하는 동안 영상 기록을 안전하게 멈추지 못해 만들기를 중단했어요. 다시 만들어 주세요.");
+      stopEverything();
+    }
+  }
+
+  pauseRenderRef.current = pauseRenderingForVisibility;
+
+  async function continueRendering() {
+    const recorder = recorderRef.current;
+    const audio = audioRef.current;
+    if (!renderActiveRef.current || !renderPausedRef.current || !recorder || !audio) return;
+    if (document.hidden) {
+      setMessage("앱 화면으로 완전히 돌아온 뒤 다시 눌러 주세요.");
+      return;
+    }
+    try {
+      setMessage("");
+      await ensureAudioGraph();
+      if (recorder.state !== "paused") throw new Error("일시정지된 영상 기록을 찾지 못했어요.");
+      recorder.resume();
+      const playback = audio.play();
+      await requestRenderWakeLock();
+      if (document.hidden) throw new Error("앱 화면으로 돌아온 뒤 영상 만들기를 다시 시작해 주세요.");
+      await playback;
+      renderPausedRef.current = false;
+      setIsRenderPaused(false);
+      animate("render");
+    } catch (error) {
+      if (recorder.state === "recording") recorder.pause();
+      audio.pause();
+      renderPausedRef.current = true;
+      setIsRenderPaused(true);
+      setMessage(error instanceof Error ? error.message : "영상 만들기를 다시 시작하지 못했어요.");
+    }
+  }
+
   function stopEverything() {
-    if (animationRef.current) cancelAnimationFrame(animationRef.current);
-    animationRef.current = null;
+    stopAnimationLoop();
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current.currentTime = 0;
     }
-    if (recorderRef.current?.state === "recording") recorderRef.current.stop();
+    if (recorderRef.current && recorderRef.current.state !== "inactive") recorderRef.current.stop();
+    cleanupRenderStream();
+    releaseRenderWakeLock();
+    renderActiveRef.current = false;
+    renderPausedRef.current = false;
     finishPlaybackRef.current?.();
     finishPlaybackRef.current = null;
     setIsPreviewing(false);
     setIsRendering(false);
+    setIsRenderPaused(false);
   }
 
   async function togglePreview() {
@@ -823,7 +1013,7 @@ export default function LPVideoMaker() {
       if (isPreviewing) {
         audio.pause();
         setIsPreviewing(false);
-        if (animationRef.current) cancelAnimationFrame(animationRef.current);
+        stopAnimationLoop();
         return;
       }
       if (audio.ended) audio.currentTime = 0;
@@ -860,16 +1050,30 @@ export default function LPVideoMaker() {
       setMessage("이 브라우저에서는 영상 만들기를 지원하지 않아요. 아이폰의 최신 Safari로 열어 주세요.");
       return;
     }
+    if (document.hidden) {
+      setMessage("앱 화면으로 완전히 돌아온 뒤 영상 만들기를 시작해 주세요.");
+      return;
+    }
     try {
       setMessage("");
       setProgress(0);
+      setIsRenderPaused(false);
+      renderPausedRef.current = false;
       setOutput((old) => {
         if (old) URL.revokeObjectURL(old.url);
         return null;
       });
       await ensureAudioGraph();
       if (monitorGainRef.current) monitorGainRef.current.gain.value = .0001;
-      const canvasStream = canvasRef.current.captureStream(QUALITIES[quality].fps);
+      let canvasStream = canvasRef.current.captureStream(0);
+      const manualTrack = canvasStream.getVideoTracks()[0] as ManualCanvasTrack | undefined;
+      if (manualTrack && typeof manualTrack.requestFrame === "function") {
+        captureFrameRef.current = () => manualTrack.requestFrame?.();
+      } else {
+        manualTrack?.stop();
+        canvasStream = canvasRef.current.captureStream(QUALITIES[quality].fps);
+        captureFrameRef.current = () => undefined;
+      }
       const sourceAudioTrack = mediaDestinationRef.current?.stream.getAudioTracks()[0];
       if (!sourceAudioTrack || sourceAudioTrack.readyState !== "live") throw new Error("오디오 트랙을 준비하지 못했어요. 앱을 완전히 종료한 뒤 다시 열어 주세요.");
       sourceAudioTrack.enabled = true;
@@ -877,6 +1081,7 @@ export default function LPVideoMaker() {
       canvasStream.getVideoTracks().forEach((track) => stream.addTrack(track));
       stream.addTrack(sourceAudioTrack);
       if (stream.getAudioTracks().length !== 1 || stream.getVideoTracks().length !== 1) throw new Error("영상과 소리를 하나로 합치지 못했어요.");
+      renderStreamRef.current = stream;
       const mimeType = supportedMime();
       const recorder = new MediaRecorder(stream, {
         ...(mimeType ? { mimeType } : {}),
@@ -889,9 +1094,7 @@ export default function LPVideoMaker() {
         if (event.data.size) chunks.push(event.data);
       };
 
-      const wakeLock = "wakeLock" in navigator
-        ? await (navigator as Navigator & { wakeLock: { request: (type: "screen") => Promise<{ release: () => Promise<void> }> } }).wakeLock.request("screen").catch(() => null)
-        : null;
+      await requestRenderWakeLock();
 
       const completed = new Promise<void>((resolve, reject) => {
         recorder.onerror = () => reject(new Error("영상 기록 중 문제가 생겼어요."));
@@ -902,15 +1105,18 @@ export default function LPVideoMaker() {
       audio.pause();
       audio.currentTime = 0;
       paintStill(0);
+      captureFrameRef.current();
       const recorderStarted = new Promise<void>((resolve) => {
         recorder.addEventListener("start", () => resolve(), { once: true });
         window.setTimeout(resolve, 300);
       });
-      recorder.start();
+      recorder.start(1000);
       await recorderStarted;
+      if (document.hidden) throw new Error("앱 화면으로 돌아온 뒤 영상 만들기를 다시 시작해 주세요.");
+      renderActiveRef.current = true;
       setIsRendering(true);
-      renderStartRef.current = performance.now();
       lastProgressRef.current = 0;
+      captureFrameRef.current();
       await audio.play();
       animate("render");
 
@@ -923,14 +1129,17 @@ export default function LPVideoMaker() {
         audio.addEventListener("ended", finish, { once: true });
       });
       finishPlaybackRef.current = null;
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      renderActiveRef.current = false;
+      renderPausedRef.current = false;
+      setIsRenderPaused(false);
+      stopAnimationLoop();
       const cancelled = !audio.ended;
       if (!cancelled) await new Promise((resolve) => window.setTimeout(resolve, 160));
-      if (recorder.state === "recording") recorder.stop();
+      if (recorder.state !== "inactive") recorder.stop();
       await completed;
-      await wakeLock?.release();
-      stream.getVideoTracks().forEach((track) => track.stop());
-      stream.removeTrack(sourceAudioTrack);
+      releaseRenderWakeLock();
+      cleanupRenderStream();
+      recorderRef.current = null;
 
       if (cancelled) {
         setProgress(0);
@@ -949,8 +1158,15 @@ export default function LPVideoMaker() {
       paintStill();
       if (finalType.includes("webm")) setMessage("영상은 완성됐지만 이 기기에서는 WebM 형식으로 저장됐어요.");
     } catch (error) {
+      renderActiveRef.current = false;
+      renderPausedRef.current = false;
       setIsRendering(false);
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
+      setIsRenderPaused(false);
+      stopAnimationLoop();
+      if (recorderRef.current && recorderRef.current.state !== "inactive") recorderRef.current.stop();
+      recorderRef.current = null;
+      cleanupRenderStream();
+      releaseRenderWakeLock();
       setMessage(error instanceof Error ? error.message : "영상을 만들지 못했어요. 다시 시도해 주세요.");
     }
   }
@@ -1201,9 +1417,15 @@ export default function LPVideoMaker() {
             {quality === "fast" && <p className="quality-note">15fps로 기기 부담과 용량을 줄여요. 완성 시간은 녹음 길이와 같아요.</p>}
             {isRendering && (
               <div className="progress-wrap" aria-live="polite">
-                <div><span>LP가 돌아가는 중</span><b>{Math.round(progress * 100)}%</b></div>
+                <div><span>{isRenderPaused ? "영상 만들기 안전 일시정지" : "LP가 녹음 끝까지 돌아가는 중"}</span><b>{Math.round(progress * 100)}%</b></div>
                 <progress value={progress} max={1} />
-                <small>화면을 끄거나 다른 앱으로 이동하지 마세요 · {formatTime(progress * duration)} / {formatTime(duration)}</small>
+                <small>{isRenderPaused ? "다른 앱으로 이동해 영상과 소리를 함께 멈췄어요." : "다른 앱으로 이동하면 자동으로 일시정지돼요."} · {formatTime(progress * duration)} / {formatTime(duration)}</small>
+              </div>
+            )}
+            {isRenderPaused && (
+              <div className="render-paused-card" role="alert">
+                <div><b>영상은 손상되지 않았어요</b><p>이 화면을 유지한 채 아래 버튼을 눌러 이어서 만들어 주세요.</p></div>
+                <button onClick={continueRendering}>영상 만들기 계속</button>
               </div>
             )}
             {message && <p className="message" role="status">{message}</p>}

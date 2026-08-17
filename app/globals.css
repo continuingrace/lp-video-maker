@@ -147,6 +147,10 @@ button { color: inherit; }
 .progress-wrap progress::-webkit-progress-bar { background: #e6e2d8; border-radius: 10px; }
 .progress-wrap progress::-webkit-progress-value { background: var(--ink); border-radius: 10px; }
 .progress-wrap small { display: block; margin-top: 7px; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.render-paused-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 12px; border: 1px solid #bfc794; border-radius: 12px; background: #f2f6dc; }
+.render-paused-card b { display: block; margin-bottom: 3px; font-size: 11px; }
+.render-paused-card p { margin: 0; color: #696d52; font-size: 9px; line-height: 1.45; }
+.render-paused-card button { flex: none; min-height: 38px; padding: 0 12px; border: 0; border-radius: 10px; background: var(--ink); color: #fff; font-size: 10px; font-weight: 800; cursor: pointer; }
 .message { margin: 14px 0 -4px; padding: 10px 12px; background: #fff0eb; border-radius: 10px; color: #8d3f2d; font-size: 11px; line-height: 1.5; }
 .output-card { background: #1d1d19; color: #fff; }
 .output-heading { display: flex; gap: 12px; align-items: center; margin-bottom: 15px; }
@@ -193,6 +197,8 @@ footer p { margin: 0; text-align: right; }
   .label-image-status { align-items: flex-start; flex-direction: column; }
   .project-save-card { align-items: stretch; flex-direction: column; gap: 11px; }
   .project-save-card button { width: 100%; }
+  .render-paused-card { align-items: stretch; flex-direction: column; }
+  .render-paused-card button { width: 100%; }
   .segmented.ratio-grid button { font-size: 10px; }
   footer { display: block; text-align: center; line-height: 1.55; }
   footer p { margin-top: 6px; text-align: center; }
